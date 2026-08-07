@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "EtiPresenca",
+    "name": "ETI PRESENSA",
     "slug": "EtiPresenca",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.juliao125.EtiPresenca"
     },
     "web": {
       "output": "static",
@@ -38,11 +39,32 @@
             "backgroundColor": "#000000"
           }
         }
+      ],
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ami presiza asesu ba ita-nia galeria atu troka foto perfil."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Ami presiza ita-nia lokalizasaun atu konfirma katak ita iha eskola bainhira rejista oras tama no sai.",
+          "locationWhenInUsePermission": "Ami presiza ita-nia lokalizasaun atu konfirma katak ita iha eskola bainhira rejista oras tama no sai.",
+          "isAndroidBackgroundLocationEnabled": false
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "eebed8ec-ee22-4a40-b9bd-4cce6da47be8"
+      }
     }
   }
 }
