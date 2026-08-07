@@ -1,24 +1,55 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/use-color-scheme';
-
-export const unstable_settings = {
-  anchor: '(tabs)',
-};
+import { getAccessToken } from "@/lib/storage";
+import { Stack, useRouter, useSegments } from "expo-router";
+import { useEffect } from "react";
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  const router = useRouter();
+  const segments = useSegments();
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const guardRoutes = async () => {
+      const token = await getAccessToken();
+      if (!isMounted) return;
+
+      const rootSegment = segments[0];
+      const isAuthRoute = rootSegment === "(auth)";
+      const isSplashRoute = rootSegment === undefined;
+      const isPublicRoute = isAuthRoute || isSplashRoute;
+
+      if (!token && !isPublicRoute) {
+        router.replace("/(auth)");
+        return;
+      }
+
+      if (token && isPublicRoute) {
+        router.replace("/(eti)");
+      }
+    };
+
+    guardRoutes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [router, segments]);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(eti)" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="announcement"
+        options={{
+          title: "Anuncio",
+          presentation: "formSheet",
+          sheetAllowedDetents: [0.6, 1],
+          sheetGrabberVisible: true,
+        }}
+      />
+      <Stack.Screen name="clock" options={{ title: "Registu Prezensa" }} />
+    </Stack>
   );
 }
