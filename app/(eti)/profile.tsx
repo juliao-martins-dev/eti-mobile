@@ -13,10 +13,17 @@ import {
   getCachedUser,
   logout,
   photoUrl,
+  roleLabel,
+  staffNumber,
   updateProfilePhoto,
   userField,
 } from "@/lib/auth";
-import { SCHEDULED_TIMES } from "@/lib/prezensa";
+import {
+  fetchKonfig,
+  KONFIG_FALLBACK,
+  trimSeconds,
+  type Konfig,
+} from "@/lib/konfig";
 import type { AuthUser } from "@/lib/storage";
 
 const placehoderImage = require("@/assets/images/prof.jpg");
@@ -26,6 +33,7 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [konfig, setKonfig] = useState<Konfig>(KONFIG_FALLBACK);
 
   useEffect(() => {
     let isMounted = true;
@@ -42,6 +50,11 @@ export default function ProfileScreen() {
       .catch(() => {
         // 401 is handled by the interceptor; otherwise keep the cached profile.
       });
+
+    // The work schedule belongs to the server, not to a literal in this file.
+    fetchKonfig().then((value) => {
+      if (isMounted) setKonfig(value);
+    });
 
     return () => {
       isMounted = false;
@@ -87,36 +100,20 @@ export default function ProfileScreen() {
     router.replace("/(auth)");
   };
 
+  // Every row below is a field /api/auth/me/ actually returns.
   const name = displayName(user, "-");
-  const department = userField(user, ["departamentu", "department"], "-");
-  const position = userField(user, ["kargu", "position", "role", "title"], "-");
+  const position = userField(user, ["kargu"], "-");
   const email = userField(user, ["email"], "-");
+  const numeruId = staffNumber(user);
+  const role = roleLabel(user, "-");
 
   const remotePhoto = photoUrl(user);
   const avatarSource = remotePhoto ? { uri: remotePhoto } : placehoderImage;
 
-  // Work info, from the profile. Falls back to the agreed schedule constants
-  // rather than an invented literal when the serializer omits the field.
-  const workSchedule = userField(
-    user,
-    ["orariu_servisu", "horariu_servisu", "orariu", "schedule"],
-    `${SCHEDULED_TIMES.ORAS_DADER_TAMA} – ${SCHEDULED_TIMES.ORAS_LOROKRAIK_FILA}`,
-  );
-
-  const activeFlag = user?.is_active ?? user?.ativu;
-  const status =
-    userField(user, ["estadu_display", "estadu", "status"], "") ||
-    (typeof activeFlag === "boolean"
-      ? activeFlag
-        ? "Ativu"
-        : "Inativu"
-      : "-");
-
-  const workplace = userField(
-    user,
-    ["lokal_servisu", "lokal", "eskola", "location", "sidade", "munisipiu"],
-    "-",
-  );
+  // Schedule and geofence come from /api/konfig/.
+  const dader = `${trimSeconds(konfig.oras_dader_tama)} – ${trimSeconds(konfig.oras_dader_fila)}`;
+  const lorokraik = `${trimSeconds(konfig.oras_lorokraik_tama)} – ${trimSeconds(konfig.oras_lorokraik_fila)}`;
+  const raiu = `${Math.round(konfig.eskola_raiu_metru)} metru`;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -151,18 +148,19 @@ export default function ProfileScreen() {
           <Text style={styles.cardTitle}>Informasaun Pessoal</Text>
 
           <ProfileRow label="Naran" value={name} />
-          <ProfileRow label="Departamentu" value={department} />
+          <ProfileRow label="Numeru ID" value={numeruId} />
           <ProfileRow label="Kargu" value={position} />
           <ProfileRow label="Email" value={email} />
+          <ProfileRow label="Tipu konta" value={role} />
         </View>
 
         {/* Work Info */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Informasaun Servisu</Text>
 
-          <ProfileRow label="Horariu Servisu" value={workSchedule} />
-          <ProfileRow label="Status" value={status} />
-          <ProfileRow label="Lokál Servisu" value={workplace} />
+          <ProfileRow label="Horariu Dader" value={dader} />
+          <ProfileRow label="Horariu Lorokraik" value={lorokraik} />
+          <ProfileRow label="Raiu eskola" value={raiu} />
         </View>
 
         {/* Actions */}
