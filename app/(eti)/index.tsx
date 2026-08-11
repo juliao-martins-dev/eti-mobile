@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Feather from "@expo/vector-icons/Feather";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 
+import { IstoriaMiniCard } from "@/components/IstoriaMiniCard";
 import {
   displayName,
   fetchMe,
@@ -14,15 +15,34 @@ import {
   photoUrl,
   userField,
 } from "@/lib/auth";
-import { getTodayAttendance, type TodayAttendance } from "@/lib/prezensa";
+import { fetchRecentDays, formatOras, type LoronRecord } from "@/lib/istoria";
+import { fetchKonfig } from "@/lib/konfig";
+import { fetchOhin, type MarkaTipu, type Ohin } from "@/lib/prezensa";
 import type { AuthUser } from "@/lib/storage";
 
 const placehoderImage = require("@/assets/images/prof.jpg");
 
+/**
+ * Weekday names in Tetun, indexed by Date#getDay() (0 = Sunday).
+ *
+ * Same wording the API puts in `loron`, so the date here and the day names on
+ * the history cards below always agree.
+ */
+const LORON_TETUN = [
+  "Domingu",
+  "Segunda-feira",
+  "Tersa-feira",
+  "Quarta-feira",
+  "Quinta-feira",
+  "Sexta-feira",
+  "Sabado",
+];
+
 export default function Index() {
   const [date, setDate] = useState<Date>(new Date());
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [today, setToday] = useState<TodayAttendance | null>(null);
+  const [today, setToday] = useState<Ohin | null>(null);
+  const [recent, setRecent] = useState<LoronRecord[]>([]);
   const router = useRouter();
 
   // Refetch on focus: today's stamps after a punch, and the profile so a photo
@@ -31,9 +51,25 @@ export default function Index() {
     useCallback(() => {
       let isMounted = true;
 
-      getTodayAttendance().then((record) => {
-        if (isMounted) setToday(record);
-      });
+      // Today's row and the button state both come from the server.
+      fetchOhin()
+        .then((record) => {
+          if (isMounted) setToday(record);
+        })
+        .catch(() => {
+          // 401 handled by the interceptor; leave the card showing "--:--:--".
+        });
+
+      // The two most recent working days, for the history preview below.
+      fetchRecentDays(3)
+        .then((days) => {
+          if (isMounted) setRecent(days);
+        })
+        .catch(() => {
+          // Non-critical: the section falls back to its empty line.
+        });
+
+      fetchKonfig();
 
       getCachedUser().then((cached) => {
         if (isMounted && cached) setUser(cached);
@@ -61,35 +97,46 @@ export default function Index() {
     return () => clearInterval(interval);
   }, []);
 
-  const formattedDate = new Intl.DateTimeFormat("id-ID", {
-    weekday: "long",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+  // Weekday in Tetun; Intl has no tet locale, so only the numeric part is
+  // formatted and the day name comes from LORON_TETUN.
+  const formattedDate = `${LORON_TETUN[date.getDay()]}, ${new Intl.DateTimeFormat(
+    "id-ID",
+    { day: "2-digit", month: "short", year: "numeric" },
+  ).format(date)}`;
 
-  function formatTimeWIB(date: Date = new Date()): string {
+  // Dili, not Jakarta — the previous name (WIB) named the wrong timezone.
+  function formatOrasDili(date: Date = new Date()): string {
     const parts = new Intl.DateTimeFormat("id-ID", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
-      timeZone: "Asia/Jakarta",
+      // Timor-Leste, not Jakarta — the school's own clock (UTC+9).
+      timeZone: "Asia/Dili",
     }).formatToParts(date);
 
     const hour = parts.find((p) => p.type === "hour")?.value;
     const minute = parts.find((p) => p.type === "minute")?.value;
     const second = parts.find((p) => p.type === "second")?.value;
 
-    return `${hour}:${minute}:${second} WIB`;
+    // OTL — Oras Timor-Leste.
+    return `${hour}:${minute}:${second} OTL`;
   }
 
-  const goToClock = (mode: "in" | "out") => {
-    router.push({ pathname: "/clock", params: { mode } });
+  const goToRegister = (tipu: MarkaTipu) => {
+    router.push({ pathname: "/register", params: { tipu } });
   };
 
   const remotePhoto = photoUrl(user);
   const avatarSource = remotePhoto ? { uri: remotePhoto } : placehoderImage;
+
+  const tama = formatOras(today?.oras_tama) ?? "--:--:--";
+  const fila = formatOras(today?.oras_fila) ?? "--:--:--";
+
+  // The server owns the button state. While today's row is still loading we
+  // leave both enabled rather than block a punch the server might accept.
+  const beleCheckin = today ? today.bele_checkin : true;
+  const beleCheckout = today ? today.bele_checkout : true;
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -110,58 +157,69 @@ export default function Index() {
         </Pressable>
         {/* end of profile */}
 
-        {/* clock */}
-        <View style={styles.clockContainer}>
-          <View style={styles.clockHeader}>
-            <View style={styles.clockHeaderLabel}>
+        {/* oras + marka */}
+        <View style={styles.orasCard}>
+          <View style={styles.orasHeader}>
+            <View style={styles.orasHeaderRow}>
               <Text style={styles.date}>{formattedDate}</Text>
-              <Text style={styles.time}>{formatTimeWIB(date)}</Text>
+              <Text style={styles.time}>{formatOrasDili(date)}</Text>
             </View>
             <View style={styles.lines} />
           </View>
-          <View style={styles.clockBody}>
-            <View style={styles.clockIn}>
-              <Text>{today?.clockIn ?? "--:--:--"}</Text>
+          <View style={styles.markaRow}>
+            <View style={styles.checkinCol}>
+              <Text>{tama}</Text>
               <Pressable
-                style={styles.clockButton}
-                onPress={() => goToClock("in")}
+                style={[
+                  styles.markaButton,
+                  !beleCheckin && styles.markaButtonOff,
+                ]}
+                disabled={!beleCheckin}
+                onPress={() => goToRegister("checkin")}
               >
                 <Feather name="log-in" size={24} color="#fff" />
-                <Text style={styles.clockButtonText}>Checkin</Text>
+                <Text style={styles.markaButtonText}>Checkin</Text>
               </Pressable>
             </View>
-            <View style={styles.clockOut}>
-              <Text>{today?.clockOut ?? "--:--:--"}</Text>
+            <View style={styles.checkoutCol}>
+              <Text>{fila}</Text>
               <Pressable
-                style={styles.clockButton}
-                onPress={() => goToClock("out")}
+                style={[
+                  styles.markaButton,
+                  !beleCheckout && styles.markaButtonOff,
+                ]}
+                disabled={!beleCheckout}
+                onPress={() => goToRegister("checkout")}
               >
                 <Feather name="log-out" size={24} color="#fff" />
-                <Text style={styles.clockButtonText}>Checkout</Text>
+                <Text style={styles.markaButtonText}>Checkout</Text>
               </Pressable>
             </View>
           </View>
         </View>
-        {/* end of clock */}
+        {/* end of oras + marka */}
 
-        {/* announcement */}
-        <View style={styles.announcementContainer}>
-          <View style={styles.announcementHeader}>
-            <Text style={styles.announcementHeaderText}>Anuncio</Text>
-            <Link href="/announcement">
-              <Text style={styles.announcementHeaderSubtext}>
-                Hare liu taan
-              </Text>
+        {/* recent history */}
+        <View style={styles.historiaContainer}>
+          <View style={styles.historiaHeader}>
+            <Text style={styles.historiaHeaderText}>Historia prezensa</Text>
+            <Link href="/history" asChild>
+              <Pressable style={styles.historiaLink} hitSlop={8}>
+                <Feather name="clock" size={15} color="#666" />
+                <Text style={styles.historiaHeaderSubtext}>Hare liu taan</Text>
+              </Pressable>
             </Link>
           </View>
-          <View>
-            <Image
-              source={require("@/assets/images/announcement.jpg")}
-              style={styles.announcementImage}
-            />
-          </View>
+
+          {recent.length ? (
+            recent.map((day) => <IstoriaMiniCard key={day.data} day={day} />)
+          ) : (
+            <Text style={styles.historiaEmpty}>
+              Seidauk iha istoria husi loron uluk.
+            </Text>
+          )}
         </View>
-        {/* end of announcement */}
+        {/* end of recent history */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -199,17 +257,17 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
   },
-  clockContainer: {
+  orasCard: {
     marginTop: 32,
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 16,
     padding: 16,
   },
-  clockHeader: {
+  orasHeader: {
     marginBottom: 16,
   },
-  clockHeaderLabel: {
+  orasHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
@@ -226,19 +284,19 @@ const styles = StyleSheet.create({
     backgroundColor: "#ccc",
     marginVertical: 16,
   },
-  clockBody: {
+  markaRow: {
     flexDirection: "row",
     justifyContent: "space-between",
   },
-  clockIn: {
+  checkinCol: {
     alignItems: "center",
     columnGap: 8,
   },
-  clockOut: {
+  checkoutCol: {
     alignItems: "center",
     columnGap: 8,
   },
-  clockButton: {
+  markaButton: {
     flexDirection: "row",
     alignItems: "center",
     columnGap: 8,
@@ -248,34 +306,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 8,
   },
-  clockButtonText: {
+  markaButtonOff: {
+    opacity: 0.4,
+  },
+  markaButtonText: {
     color: "#fff",
     fontSize: 19,
   },
-  announcementContainer: {
+  historiaContainer: {
     marginTop: 32,
-    padding: 16,
-    backgroundColor: "#f9f9f9",
-    borderRadius: 16,
+    marginBottom: 16,
   },
-  announcementHeader: {
+  historiaHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginVertical: 16,
+    marginBottom: 12,
   },
-  announcementHeaderText: {
+  historiaHeaderText: {
     fontSize: 20,
     fontWeight: "bold",
   },
-  announcementHeaderSubtext: {
+  historiaLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 6,
+  },
+  historiaHeaderSubtext: {
     fontSize: 16,
     color: "#666",
     textDecorationLine: "underline",
   },
-  announcementImage: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 16,
+  historiaEmpty: {
+    fontSize: 14,
+    color: "#94A3B8",
+    paddingVertical: 12,
   },
 });
