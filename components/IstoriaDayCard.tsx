@@ -1,4 +1,6 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
+import { useState } from "react";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   buildSesaun,
@@ -16,6 +18,12 @@ export function IstoriaDayCard({ day }: Props) {
   const empty = seidaukMarka(day);
   const late = ihaAtrazadu(day);
   const sesaun = buildSesaun(day);
+  const [evidence, setEvidence] = useState<SlotView | null>(null);
+
+  // Every punch that actually carries a photo, in slot order.
+  const withPhotos = sesaun
+    .flatMap((session) => session.slots)
+    .filter((slot) => !!slot.foto);
 
   const badgeColor = empty
     ? ISTORIA_COLORS.muted
@@ -56,8 +64,88 @@ export function IstoriaDayCard({ day }: Props) {
         </View>
       ))}
 
+      {withPhotos.length ? (
+        <View style={styles.evidenceRow}>
+          {withPhotos.map((slot) => (
+            <Pressable
+              key={`foto-${slot.kolumna}`}
+              onPress={() => setEvidence(slot)}
+              style={styles.thumbWrap}
+            >
+              <Image
+                source={{ uri: slot.foto! }}
+                style={styles.thumb}
+                contentFit="cover"
+              />
+              <Text style={styles.thumbLabel}>{slot.oras}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
       {day.obs ? <Text style={styles.obs}>{day.obs}</Text> : null}
+
+      <EvidenceModal
+        slot={evidence}
+        loron={day.loron}
+        onClose={() => setEvidence(null)}
+      />
     </View>
+  );
+}
+
+/** Full-size punch photo with the evidence recorded alongside it. */
+function EvidenceModal({
+  slot,
+  loron,
+  onClose,
+}: {
+  slot: SlotView | null;
+  loron: string;
+  onClose: () => void;
+}) {
+  return (
+    <Modal
+      visible={!!slot}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.evidenceCard} onPress={() => {}}>
+          {slot?.foto ? (
+            <Image
+              source={{ uri: slot.foto }}
+              style={styles.evidencePhoto}
+              contentFit="cover"
+            />
+          ) : null}
+
+          <View style={styles.evidenceBody}>
+            <Text style={styles.evidenceTitle}>
+              {loron} · {slot?.label} {slot?.oras}
+            </Text>
+
+            {slot?.atrazadu && slot?.orasOrariu ? (
+              <Text style={[styles.evidenceMeta, styles.evidenceLate]}>
+                Atrazadu — orariu {slot.orasOrariu}
+              </Text>
+            ) : null}
+
+            {typeof slot?.distansiaMetru === "number" ? (
+              <Text style={styles.evidenceMeta}>
+                {Math.round(slot.distansiaMetru)} metru husi eskola
+                {slot.ihaEskola === false ? " — iha liur" : ""}
+              </Text>
+            ) : null}
+          </View>
+
+          <Pressable style={styles.evidenceClose} onPress={onClose}>
+            <Text style={styles.evidenceCloseText}>Taka</Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -189,5 +277,67 @@ const styles = StyleSheet.create({
     color: ISTORIA_COLORS.subtle,
     fontStyle: "italic",
     marginTop: 4,
+  },
+  evidenceRow: {
+    flexDirection: "row",
+    columnGap: 8,
+    marginTop: 4,
+  },
+  thumbWrap: {
+    alignItems: "center",
+  },
+  thumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: ISTORIA_COLORS.track,
+  },
+  thumbLabel: {
+    fontSize: 10,
+    color: ISTORIA_COLORS.subtle,
+    marginTop: 2,
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.65)",
+    justifyContent: "center",
+    paddingHorizontal: 24,
+  },
+  evidenceCard: {
+    backgroundColor: ISTORIA_COLORS.card,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  evidencePhoto: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    backgroundColor: ISTORIA_COLORS.track,
+  },
+  evidenceBody: {
+    padding: 14,
+    rowGap: 4,
+  },
+  evidenceTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: ISTORIA_COLORS.text,
+  },
+  evidenceMeta: {
+    fontSize: 12,
+    color: ISTORIA_COLORS.subtle,
+  },
+  evidenceLate: {
+    color: ISTORIA_COLORS.late,
+  },
+  evidenceClose: {
+    paddingVertical: 12,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: ISTORIA_COLORS.track,
+  },
+  evidenceCloseText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#2563EB",
   },
 });
