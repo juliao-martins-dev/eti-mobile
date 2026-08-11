@@ -1,6 +1,16 @@
 import { EmptyNotification } from "@/components/EmptyNotification";
 import { NotificationCard } from "@/components/NotificationCard";
-import { useState } from "react";
+import {
+  clearFeed,
+  feedIcon,
+  formatFeedTime,
+  getFeed,
+  markAllRead,
+  type FeedItem,
+} from "@/lib/feed";
+import { dismissDelivered } from "@/lib/notifications";
+import { useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   FlatList,
   StyleSheet,
@@ -12,70 +22,45 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const TABS = [
   { key: "HOTU", label: "Hotu" },
-  { key: "PRESENSA", label: "Presensa" },
-  { key: "ESKOLA", label: "Eskola" },
-];
+  { key: "PREZENSA", label: "Prezensa" },
+  { key: "LEMBRA", label: "Lembra" },
+] as const;
 
-type NotificationType = "HOTU" | "PRESENSA" | "ESKOLA";
-
-type NotificationItem = {
-  id: string;
-  type: NotificationType;
-  title: string;
-  message: string;
-  time: string;
-  unread: boolean;
-  icon: "success" | "warning" | "announcement";
-};
-
-const notificationsMock: NotificationItem[] = [
-  {
-    id: "1",
-    type: "PRESENSA",
-    title: "Presensa Susesu",
-    message: "Ita halo presensa tama ho susesu iha 07:56.",
-    time: "Hoje · 07:58",
-    unread: true,
-    icon: "success",
-  },
-  {
-    id: "2",
-    type: "PRESENSA",
-    title: "Presensa Atrasu",
-    message: "Ita tama iha oras 08:15. Favor haree regulamentu.",
-    time: "Hoje · 08:20",
-    unread: true,
-    icon: "warning",
-  },
-  {
-    id: "3",
-    type: "ESKOLA",
-    title: "Avisu Eskola",
-    message: "Reuniaun profesor sira iha Loron Kurta ba oni.",
-    time: "Ontem · 11:30",
-    unread: true,
-    icon: "announcement",
-  },
-  {
-    id: "4",
-    type: "PRESENSA",
-    title: "Presensa Susesu",
-    message: "Ita halo presensa sai ho susesu loron Segunda.",
-    time: "Segunda · 07:12",
-    unread: false,
-    icon: "success",
-  },
-];
+type TabKey = (typeof TABS)[number]["key"];
 
 export default function NotifikasaunScreen() {
-  const [activeTab, setActiveTab] = useState<"HOTU" | "PRESENSA" | "ESKOLA">(
-    "HOTU",
+  const [activeTab, setActiveTab] = useState<TabKey>("HOTU");
+  const [items, setItems] = useState<FeedItem[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+
+      getFeed().then((stored) => {
+        if (!isMounted) return;
+
+        setItems(stored);
+        // Seen is seen — drop the unread dots once the list is on screen.
+        markAllRead().catch(() => {});
+      });
+
+      return () => {
+        isMounted = false;
+      };
+    }, []),
   );
+
+  const handleClearAll = async () => {
+    setItems([]);
+    await clearFeed();
+    // Keep the phone's tray consistent with the list the teacher just emptied.
+    await dismissDelivered();
+  };
 
   const filteredData =
     activeTab === "HOTU"
-      ? notificationsMock
-      : notificationsMock.filter((n) => n.type === activeTab);
+      ? items
+      : items.filter((item) => item.kind === activeTab);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
@@ -84,7 +69,7 @@ export default function NotifikasaunScreen() {
         {TABS.map((tab) => (
           <TouchableOpacity
             key={tab.key}
-            onPress={() => setActiveTab(tab.key as any)}
+            onPress={() => setActiveTab(tab.key)}
             style={[styles.tab, activeTab === tab.key && styles.tabActive]}
           >
             <Text
@@ -106,10 +91,25 @@ export default function NotifikasaunScreen() {
         <FlatList
           data={filteredData}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <NotificationCard {...item} />}
-          contentContainerStyle={{ paddingTop: 16 }}
+          renderItem={({ item }) => (
+            <NotificationCard
+              title={item.title}
+              message={item.message}
+              time={formatFeedTime(item.at)}
+              unread={item.unread}
+              icon={feedIcon(item.level)}
+            />
+          )}
+          contentContainerStyle={{ paddingTop: 16, paddingBottom: 16 }}
         />
       )}
+
+      {/* Clear all — only when there is something to clear */}
+      {items.length > 0 ? (
+        <TouchableOpacity style={styles.clearButton} onPress={handleClearAll}>
+          <Text style={styles.clearButtonText}>Hamoos notifikasaun hotu</Text>
+        </TouchableOpacity>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -143,5 +143,19 @@ const styles = StyleSheet.create({
   },
   tabTextActive: {
     color: "#FFFFFF",
+  },
+  clearButton: {
+    marginBottom: 12,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+  },
+  clearButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#B45309",
   },
 });
