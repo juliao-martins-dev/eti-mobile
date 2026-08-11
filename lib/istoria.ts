@@ -122,6 +122,11 @@ export type SlotView = {
   atrazadu: boolean;
   /** Saturday afternoon: render "—" rather than an empty slot. */
   laiha: boolean;
+  /** Absolute URL of the selfie taken for this punch. */
+  foto: string | null;
+  /** Metres from the school when the punch was taken. */
+  distansiaMetru: number | null;
+  ihaEskola: boolean | null;
 };
 
 export type SesaunView = {
@@ -152,6 +157,10 @@ function buildSlot(day: LoronRecord, kolumna: Kolumna, label: string): SlotView 
     // atrazadu is null on departures — coerce so the UI never flags one.
     atrazadu: kolumna.endsWith("TAMA") ? marka?.atrazadu === true : false,
     laiha,
+    foto: typeof marka?.foto === "string" ? marka.foto : null,
+    distansiaMetru:
+      typeof marka?.distansia_metru === "number" ? marka.distansia_metru : null,
+    ihaEskola: typeof marka?.iha_eskola === "boolean" ? marka.iha_eskola : null,
   };
 }
 
@@ -194,6 +203,49 @@ export class IstoriaError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+/** Local calendar date as "YYYY-MM-DD" — never UTC, which can shift the day. */
+function localISO(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * The most recent working days *before* today, newest first.
+ *
+ * `istoria/` is month-scoped, so early in a month the previous month is
+ * fetched too. Sundays never appear — the server excludes them — so "the last
+ * two days" means the last two working days, not literally yesterday.
+ */
+export async function fetchRecentDays(
+  count = 2,
+  today: Date = new Date(),
+): Promise<LoronRecord[]> {
+  const cutoff = localISO(today);
+
+  const monthDays = async (fulan: number, tinan: number) => {
+    try {
+      const { loron } = await fetchIstoria({ fulan, tinan });
+      return loron.filter((day) => (day.data ?? "") < cutoff);
+    } catch {
+      return [];
+    }
+  };
+
+  let days = await monthDays(today.getMonth() + 1, today.getFullYear());
+
+  if (days.length < count) {
+    const previous = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    days = [
+      ...(await monthDays(previous.getMonth() + 1, previous.getFullYear())),
+      ...days,
+    ];
+  }
+
+  return days
+    .sort((a, b) => (a.data < b.data ? 1 : -1))
+    .slice(0, count);
 }
 
 /**
