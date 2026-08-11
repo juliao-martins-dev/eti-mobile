@@ -39,13 +39,16 @@ export const AUTH_ENDPOINTS = {
   me: "/api/auth/me/",
 } as const;
 
+// Trailing slashes are required — Django 301-redirects without them, and the
+// POST body is dropped on the hop.
 export const PREZENSA_ENDPOINTS = {
-  clockIn: "/api/prezensa/checkin/",
-  clockOut: "/api/prezensa/checkout/",
-  // Trailing slashes are required — Django 301-redirects without them.
+  checkin: "/api/prezensa/checkin/",
+  checkout: "/api/prezensa/checkout/",
+  ohin: "/api/prezensa/ohin/",
   istoria: "/api/prezensa/istoria/",
-  istoriaOhin: "/api/prezensa/istoria-ohin/",
 } as const;
+
+export const KONFIG_ENDPOINT = "/api/konfig/";
 
 /** Requests to these paths never carry a Bearer token and are never retried. */
 export const PUBLIC_PATHS: string[] = [
