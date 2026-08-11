@@ -1,6 +1,6 @@
 import * as Location from "expo-location";
 
-import type { ClockCoords } from "./prezensa";
+import type { MarkaCoords } from "./prezensa";
 
 /** Thrown when coordinates can't be obtained, with a Tetum message to show. */
 export class LocationError extends Error {}
@@ -16,7 +16,7 @@ const UNAVAILABLE =
  * position when a fresh fix is slow (indoors, weak signal), which is accurate
  * enough for the school geofence.
  */
-export async function getCurrentCoords(): Promise<ClockCoords> {
+export async function getCurrentCoords(): Promise<MarkaCoords> {
   const { status } = await Location.requestForegroundPermissionsAsync();
 
   if (status !== Location.PermissionStatus.GRANTED) {
@@ -30,6 +30,7 @@ export async function getCurrentCoords(): Promise<ClockCoords> {
     return {
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
+      presizaun: position.coords.accuracy,
     };
   } catch {
     const last = await Location.getLastKnownPositionAsync();
@@ -37,6 +38,7 @@ export async function getCurrentCoords(): Promise<ClockCoords> {
       return {
         latitude: last.coords.latitude,
         longitude: last.coords.longitude,
+        presizaun: last.coords.accuracy,
       };
     }
     throw new LocationError(UNAVAILABLE);
