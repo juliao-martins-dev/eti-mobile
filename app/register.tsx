@@ -3,16 +3,32 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Linking,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiErrorMessage } from "@/lib/api";
-import { displayName, getCachedUser, userField } from "@/lib/auth";
+import { displayName, getCachedUser, staffNumber } from "@/lib/auth";
+import { recordMarkaFailure, recordMarkaSuccess } from "@/lib/feed";
+import { fetchKonfig } from "@/lib/konfig";
 import { getCurrentCoords, LocationError } from "@/lib/location";
-import { clock, formatClockTime, type ClockMode } from "@/lib/prezensa";
+import { notifyNow } from "@/lib/notifications";
+import {
+  formatOrasAgora,
+  marka,
+  PrezensaError,
+  sesaunLabels,
+  type MarkaTipu,
+} from "@/lib/prezensa";
 import type { AuthUser } from "@/lib/storage";
 
-export default function ClockPresence() {
+export default function RegisterPrezensa() {
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [isUploading, setIsUploading] = useState(false);
@@ -20,9 +36,11 @@ export default function ClockPresence() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [now, setNow] = useState<Date>(new Date());
+  const [error, setError] = useState<string | null>(null);
 
-  const params = useLocalSearchParams<{ mode?: string }>();
-  const mode: ClockMode = params.mode === "out" ? "out" : "in";
+  // ?tipu=checkin|checkout — named after the endpoint that records it.
+  const params = useLocalSearchParams<{ tipu?: string }>();
+  const tipu: MarkaTipu = params.tipu === "checkout" ? "checkout" : "checkin";
 
   useEffect(() => {
     let isMounted = true;
@@ -30,6 +48,9 @@ export default function ClockPresence() {
     getCachedUser().then((cached) => {
       if (isMounted) setUser(cached);
     });
+
+    // Warms limite_sesaun so the session label matches the server's cut-off.
+    fetchKonfig();
 
     return () => {
       isMounted = false;
@@ -69,55 +90,93 @@ export default function ClockPresence() {
 
     setIsUploading(true);
 
+    setError(null);
+
     try {
       const coords = await getCurrentCoords();
-      await clock(mode, photoUri, coords);
+      const result = await marka(tipu, photoUri, coords);
+
+      // `duplicate` counts as success — the marka is already stored.
+      const entry = await recordMarkaSuccess(result);
+      await notifyNow(entry.title, entry.message);
+
       router.replace("/(eti)");
     } catch (e) {
-      if (e instanceof LocationError) {
-        alert(e.message);
-      } else {
-        alert(apiErrorMessage(e, "Falla koko manda fila fali!"));
-      }
+      // A network error carries no server wording; give it readable text
+      // before it reaches the feed.
+      const failure =
+        e instanceof LocationError || e instanceof PrezensaError
+          ? e
+          : new Error(apiErrorMessage(e, "Falla koko manda fila fali!"));
+
+      const entry = await recordMarkaFailure(tipu, failure);
+      await notifyNow(entry.title, entry.message);
+
+      // Shown on the screen too: the notification permission may be denied,
+      // and a failed marka must never be silent.
+      setError(entry.message);
     } finally {
       setIsUploading(false);
     }
   };
 
   if (photoUri) {
+    // Which column this marka lands in, per the server's limite_sesaun.
+    const { sesaun, asaun } = sesaunLabels(tipu, now);
+
     return (
-      <SafeAreaView style={[styles.container, styles.containerPreview]}>
-        <View style={styles.headerPreview}>
-          <Text style={styles.headerPreviewNameText}>
+      // Only the bottom edge: the stack header already covers the top.
+      <SafeAreaView style={styles.previewScreen} edges={["bottom"]}>
+        <View style={styles.previewHeader}>
+          <Text style={styles.previewName} numberOfLines={1}>
             {displayName(user, "-")}
           </Text>
-          <Text style={styles.headerPreviewIdText}>
-            {userField(user, ["numeru", "nip", "employee_id", "id"], "-")}
-          </Text>
+          <Text style={styles.previewId}>{staffNumber(user)}</Text>
         </View>
 
-        <Image
-          contentFit="cover"
-          source={{ uri: photoUri }}
-          style={styles.previewImage}
-        />
-
-        <View style={styles.clockInfoPreview}>
-          <Text style={styles.clockTextPreview}>
-            {mode === "in" ? "Horas Tama" : "Horas Fila"}
-          </Text>
-          <View style={styles.clockSeparator} />
-          <Text style={styles.clockTimePreview}>{formatClockTime(now)}</Text>
+        {/* Takes every pixel the fixed rows leave, so nothing ever overflows. */}
+        <View style={styles.photoWrap}>
+          <Image
+            contentFit="cover"
+            source={{ uri: photoUri }}
+            style={styles.previewImage}
+          />
         </View>
+
+        <View style={styles.statusCard}>
+          <Text style={styles.sesaunLabel}>{sesaun}</Text>
+
+          <View style={styles.asaunRow}>
+            <Feather
+              name={tipu === "checkin" ? "log-in" : "log-out"}
+              size={18}
+              color="#007AFF"
+            />
+            <Text style={styles.asaunText}>{asaun}</Text>
+          </View>
+
+          <View style={styles.statusSeparator} />
+
+          <View style={styles.timeRow}>
+            <Text style={styles.statusTime}>{formatOrasAgora(now)}</Text>
+            <Text style={styles.statusZone}>OTL</Text>
+          </View>
+        </View>
+
+        {error ? <Text style={styles.previewError}>{error}</Text> : null}
 
         <Pressable
-          style={styles.previewButton}
+          style={[styles.previewButton, isUploading && styles.previewButtonBusy]}
           onPress={handleUploadPhoto}
           disabled={isUploading}
         >
-          <Feather name="log-in" size={24} color="#fff" />
+          {isUploading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Feather name="check" size={22} color="#fff" />
+          )}
           <Text style={styles.previewButtonText}>
-            Rejista oras servisu nian
+            {isUploading ? "Haruka..." : "Rejistu"}
           </Text>
         </Pressable>
       </SafeAreaView>
@@ -283,29 +342,105 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "500",
   },
-  containerPreview: {
-    paddingTop: 30,
-    alignItems: "center",
-  },
   camera: {
     ...StyleSheet.absoluteFillObject,
   },
-  preview: {
-    ...StyleSheet.absoluteFillObject,
+  /* ---------------------------------------------------------------- *
+   * Confirmation step
+   *
+   * A flex column with one growing row. Everything but the photo has a
+   * fixed height, so the photo absorbs the slack and the screen fits on
+   * any phone without scrolling.
+   * ---------------------------------------------------------------- */
+  previewScreen: {
+    flex: 1,
+    backgroundColor: "#fff",
+    paddingHorizontal: 24,
+    paddingBottom: 12,
+  },
+  previewHeader: {
+    alignItems: "center",
+    paddingTop: 12,
+    rowGap: 2,
+  },
+  previewName: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#0b1b3d",
+  },
+  previewId: {
+    fontSize: 15,
+    color: "#8A94A6",
+    fontWeight: "500",
+  },
+  photoWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 16,
   },
   previewImage: {
-    marginVertical: 40,
-    width: 200,
+    height: "100%",
     aspectRatio: 3 / 4,
+    // Keeps the photo sane on tall screens; the flex parent handles short ones.
+    maxHeight: 320,
     borderRadius: 20,
-    // iOS shadow
-    shadowColor: "#000",
+    backgroundColor: "#EEF2F7",
+    shadowColor: "#001F54",
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    // Android shadow
-    elevation: 10,
-    backgroundColor: "#fff", // WAJIB untuk Android
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  statusCard: {
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E9F0",
+    borderRadius: 16,
+    backgroundColor: "#FAFBFD",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  sesaunLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: "#8A94A6",
+  },
+  asaunRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: 8,
+    marginTop: 4,
+  },
+  asaunText: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#007AFF",
+  },
+  statusSeparator: {
+    height: 1,
+    alignSelf: "stretch",
+    backgroundColor: "#E5E9F0",
+    marginVertical: 10,
+  },
+  timeRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    columnGap: 6,
+  },
+  statusTime: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: "#0b1b3d",
+    // Stops the row twitching as the seconds tick.
+    fontVariant: ["tabular-nums"],
+  },
+  statusZone: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#8A94A6",
   },
   bottomBar: {
     position: "absolute",
@@ -345,49 +480,29 @@ const styles = StyleSheet.create({
   captureDisabled: {
     opacity: 0.6,
   },
-  headerPreview: {
-    alignItems: "center",
-    rowGap: 5,
-  },
-  headerPreviewNameText: {
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  headerPreviewIdText: {
-    fontSize: 16,
-    color: "#555",
-    fontWeight: 500,
-  },
-  clockInfoPreview: {
-    alignItems: "center",
-    rowGap: 10,
-  },
-  clockTextPreview: {
-    fontSize: 16,
-  },
-  clockSeparator: {
-    width: 200,
-    height: 1,
-    backgroundColor: "#ccc",
-  },
-  clockTimePreview: {
-    fontSize: 16,
-    fontWeight: "bold",
-  },
   previewButton: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     columnGap: 10,
-    marginTop: 30,
-    paddingVertical: 12,
+    marginTop: 16,
+    height: 52,
     backgroundColor: "#007AFF",
-    borderRadius: 8,
-    paddingHorizontal: 20,
-    position: "absolute",
-    bottom: 40,
+    borderRadius: 12,
+  },
+  previewButtonBusy: {
+    opacity: 0.6,
+  },
+  previewError: {
+    marginTop: 12,
+    textAlign: "center",
+    fontSize: 14,
+    lineHeight: 20,
+    color: "#B45309",
   },
   previewButtonText: {
-    fontSize: 16,
-    fontWeight: 500,
+    fontSize: 17,
+    fontWeight: "600",
     color: "#fff",
   },
 });
