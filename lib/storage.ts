@@ -13,9 +13,20 @@ const LEGACY_TOKEN_KEY = "auth_token";
  */
 const API_HOST_KEY = "api_host";
 
+/**
+ * The profile as `/api/auth/me/` returns it. The first block is the real
+ * contract; the rest are tolerated legacy spellings.
+ */
 export type AuthUser = {
   id?: number | string;
+  numeru_id?: number | string;
   email?: string;
+  naran_kompletu?: string;
+  kargu?: string;
+  foto?: string | null;
+  role?: string;
+  role_display?: string;
+
   name?: string;
   first_name?: string;
   last_name?: string;
