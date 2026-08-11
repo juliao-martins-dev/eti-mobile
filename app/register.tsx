@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
@@ -15,7 +16,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { apiErrorMessage } from "@/lib/api";
 import { displayName, getCachedUser, staffNumber } from "@/lib/auth";
-import { recordMarkaFailure, recordMarkaSuccess } from "@/lib/feed";
+import {
+  recordMarkaFailure,
+  recordMarkaSuccess,
+  type FeedLevel,
+} from "@/lib/feed";
 import { fetchKonfig } from "@/lib/konfig";
 import { getCurrentCoords, LocationError } from "@/lib/location";
 import { notifyNow } from "@/lib/notifications";
@@ -28,6 +33,20 @@ import {
 } from "@/lib/prezensa";
 import type { AuthUser } from "@/lib/storage";
 
+/**
+ * What the server said about the marka just sent.
+ *
+ * `ok` is kept separate from `level`: a late punch is a **success** the
+ * server recorded, but it is levelled `warning` so the teacher sees it was
+ * late. Deciding from `level` alone would send them back to the camera.
+ */
+type Outcome = {
+  ok: boolean;
+  level: FeedLevel;
+  title: string;
+  message: string;
+};
+
 export default function RegisterPrezensa() {
   const cameraRef = useRef<CameraView | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
@@ -37,6 +56,7 @@ export default function RegisterPrezensa() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [now, setNow] = useState<Date>(new Date());
   const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
 
   // ?tipu=checkin|checkout — named after the endpoint that records it.
   const params = useLocalSearchParams<{ tipu?: string }>();
@@ -100,7 +120,8 @@ export default function RegisterPrezensa() {
       const entry = await recordMarkaSuccess(result);
       await notifyNow(entry.title, entry.message);
 
-      router.replace("/(eti)");
+      // The teacher confirms before leaving, so the result is never missed.
+      setOutcome({ ok: true, ...entry });
     } catch (e) {
       // A network error carries no server wording; give it readable text
       // before it reaches the feed.
@@ -112,12 +133,21 @@ export default function RegisterPrezensa() {
       const entry = await recordMarkaFailure(tipu, failure);
       await notifyNow(entry.title, entry.message);
 
-      // Shown on the screen too: the notification permission may be denied,
-      // and a failed marka must never be silent.
+      // Kept under the photo after the modal closes: a failed marka must
+      // stay visible while the teacher decides whether to try again.
       setError(entry.message);
+      setOutcome({ ok: false, ...entry });
     } finally {
       setIsUploading(false);
     }
+  };
+
+  /** Success leaves for the home screen; failure stays so it can be retried. */
+  const dismissOutcome = () => {
+    const succeeded = outcome?.ok;
+    setOutcome(null);
+
+    if (succeeded) router.replace("/(eti)");
   };
 
   if (photoUri) {
@@ -179,6 +209,8 @@ export default function RegisterPrezensa() {
             {isUploading ? "Haruka..." : "Rejistu"}
           </Text>
         </Pressable>
+
+        <OutcomeModal outcome={outcome} onClose={dismissOutcome} />
       </SafeAreaView>
     );
   }
@@ -265,10 +297,122 @@ export default function RegisterPrezensa() {
   );
 }
 
+/** How each level is dressed — the same three the notification list uses. */
+const OUTCOME_LOOK = {
+  success: { icon: "check-circle", tint: "#16A34A", wash: "#E8F7EE" },
+  warning: { icon: "alert-triangle", tint: "#B45309", wash: "#FDF3E3" },
+  info: { icon: "info", tint: "#2563EB", wash: "#E8F0FE" },
+} as const satisfies Record<
+  FeedLevel,
+  { icon: keyof typeof Feather.glyphMap; tint: string; wash: string }
+>;
+
+/**
+ * The result of the marka, held on screen until the teacher acknowledges it.
+ *
+ * The same wording already went to the phone's notification tray and the
+ * in-app list; this is the third place, so the outcome cannot be missed.
+ */
+function OutcomeModal({
+  outcome,
+  onClose,
+}: {
+  outcome: Outcome | null;
+  onClose: () => void;
+}) {
+  // Nothing is rendered between punches, so no stale message can flash.
+  if (!outcome) return null;
+
+  const look = OUTCOME_LOOK[outcome.level];
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="fade"
+      // Android's back button must not skip past the result.
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.outcomeBackdrop} onPress={onClose}>
+        {/* Swallows taps so pressing the card itself does not dismiss it. */}
+        <Pressable style={styles.outcomeCard} onPress={() => {}}>
+          <View style={[styles.outcomeIcon, { backgroundColor: look.wash }]}>
+            <Feather name={look.icon} size={30} color={look.tint} />
+          </View>
+
+          <Text style={styles.outcomeTitle}>{outcome.title}</Text>
+          <Text style={styles.outcomeMessage}>{outcome.message}</Text>
+
+          <Pressable
+            style={[styles.outcomeButton, { backgroundColor: look.tint }]}
+            onPress={onClose}
+          >
+            <Text style={styles.outcomeButtonText}>
+              {outcome.ok ? "Diak" : "Koko fila fali"}
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+  },
+  outcomeBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15,23,42,0.55)",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+  },
+  outcomeCard: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    paddingVertical: 24,
+    paddingHorizontal: 22,
+    alignItems: "center",
+    shadowColor: "#001F54",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  outcomeIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 14,
+  },
+  outcomeTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0b1b3d",
+    textAlign: "center",
+  },
+  outcomeMessage: {
+    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#44526b",
+    textAlign: "center",
+  },
+  outcomeButton: {
+    marginTop: 20,
+    alignSelf: "stretch",
+    height: 48,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  outcomeButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
   },
   permissionContainer: {
     flex: 1,
