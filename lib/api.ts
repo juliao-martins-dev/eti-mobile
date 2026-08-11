@@ -61,6 +61,26 @@ const hostReady = (async () => {
 
 export const getActiveHost = () => activeHost;
 
+/**
+ * Fire-and-forget POST on the bare client: no auth interceptor, no refresh,
+ * no host failover, and a short timeout.
+ *
+ * For calls whose result the UI must never wait on — logout being the case
+ * that matters. Going through `api` would cost a 12s timeout per candidate
+ * host before the caller regained control.
+ */
+export function backgroundPost(
+  url: string,
+  data: unknown,
+  accessToken?: string | null,
+  timeout = 4000,
+) {
+  return plain.post(url, data, {
+    timeout,
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+}
+
 /** Rotates to the next candidate and remembers it. */
 async function switchToNextHost(): Promise<string | null> {
   if (API_HOSTS.length < 2) return null;
