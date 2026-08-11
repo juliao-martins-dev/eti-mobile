@@ -1,8 +1,11 @@
-import { api } from "./api";
+import { api, backgroundPost } from "./api";
 import { AUTH_ENDPOINTS } from "./config";
+import { clearFeed } from "./feed";
+import { cancelReminders } from "./notifications";
 import {
   AuthUser,
   clearSession,
+  getAccessToken,
   getRefreshToken,
   getUser,
   saveSession,
@@ -30,21 +33,40 @@ export async function login(
 }
 
 /**
- * POST /api/auth/logout/ — blacklists the refresh token (205).
- * The local session is cleared even if the call fails, so the teacher is
- * never stuck logged in on a dead token.
+ * Signs the teacher out.
+ *
+ * The session is cleared locally **first**, so the UI can navigate at once,
+ * and the server-side blacklist (`POST /api/auth/logout/`, 205) is fired
+ * afterwards without being awaited.
+ *
+ * Awaiting that call is what made logout feel broken: it runs through the
+ * normal client, so an unreachable host costs a 12s timeout, then failover
+ * replays it against the next candidate for another 12s — up to ~24s of
+ * staring at the profile screen before anything happened. Nothing about
+ * being logged out on this device depends on that response.
  */
 export async function logout(): Promise<void> {
-  const refresh = await getRefreshToken();
+  const [access, refresh] = await Promise.all([
+    getAccessToken(),
+    getRefreshToken(),
+  ]);
 
-  try {
-    if (refresh) {
-      await api.post(AUTH_ENDPOINTS.logout, { refresh });
-    }
-  } catch {
-    // Already expired or offline — local cleanup below is what matters.
-  } finally {
-    await clearSession();
+  // Local state goes first — this is what "logged out" means on the device.
+  await clearSession();
+
+  // A signed-out phone should stop reminding anyone to punch, and must not
+  // leave one teacher's punch history visible to the next person to log in.
+  cancelReminders().catch(() => {});
+  clearFeed().catch(() => {});
+
+  if (refresh) {
+    // Bare client: no interceptor could re-authenticate this anyway, since
+    // the tokens it would need are already gone.
+    backgroundPost(AUTH_ENDPOINTS.logout, { refresh }, access).catch(() => {
+      // Offline, expired, or already blacklisted — the refresh token stays
+      // valid server-side until it expires. Acceptable: it is unreachable
+      // from this device now.
+    });
   }
 }
 
@@ -110,7 +132,11 @@ export function photoUrl(user: AuthUser | null): string | null {
 /** Cached profile, for instant paint before /me/ resolves. */
 export const getCachedUser = getUser;
 
-/** Best display name available, whatever shape the serializer returns. */
+/**
+ * The teacher's name. `naran_kompletu` is what the API actually sends; the
+ * other keys are tolerated only so an older payload still renders. Falling
+ * through to the e-mail is a last resort, not a normal outcome.
+ */
 export function displayName(user: AuthUser | null, fallback = ""): string {
   if (!user) return fallback;
 
@@ -120,6 +146,7 @@ export function displayName(user: AuthUser | null, fallback = ""): string {
     .trim();
 
   const candidate =
+    (typeof user.naran_kompletu === "string" && user.naran_kompletu) ||
     (typeof user.full_name === "string" && user.full_name) ||
     (typeof user.name === "string" && user.name) ||
     composed ||
@@ -128,6 +155,14 @@ export function displayName(user: AuthUser | null, fallback = ""): string {
 
   return candidate || fallback;
 }
+
+/** Staff number as printed on the paper sheet — not the database primary key. */
+export const staffNumber = (user: AuthUser | null, fallback = "-") =>
+  userField(user, ["numeru_id"], fallback);
+
+/** "Professór" / "Administradór" — the label, never the stored role value. */
+export const roleLabel = (user: AuthUser | null, fallback = "") =>
+  userField(user, ["role_display"], fallback);
 
 /** Reads a string field from the profile under any of the given keys. */
 export function userField(
