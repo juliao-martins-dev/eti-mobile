@@ -49,7 +49,7 @@ export default function RootLayout() {
           sheetGrabberVisible: true,
         }}
       />
-      <Stack.Screen name="clock" options={{ title: "Registu Prezensa" }} />
+      <Stack.Screen name="register" options={{ title: "Registu Prezensa" }} />
     </Stack>
   );
 }
