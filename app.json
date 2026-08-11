@@ -54,6 +54,13 @@
           "locationWhenInUsePermission": "Ami presiza ita-nia lokalizasaun atu konfirma katak ita iha eskola bainhira rejista oras tama no sai.",
           "isAndroidBackgroundLocationEnabled": false
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#007AFF",
+          "defaultChannel": "prezensa-lembra"
+        }
       ]
     ],
     "experiments": {
