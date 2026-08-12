@@ -123,7 +123,7 @@ export default function ProfileScreen() {
           <Pressable onPress={() => router.back()}>
             <Feather name="arrow-left" size={24} color="#000" />
           </Pressable>
-          <Text style={styles.headerTitle}>Profile</Text>
+          <Text style={styles.headerTitle}>Perfil</Text>
           <View style={{ width: 24 }} />
         </View>
 
@@ -235,11 +235,17 @@ const styles = StyleSheet.create({
   name: {
     fontSize: 22,
     fontWeight: "bold",
+    // Once either of these wraps, the Text fills the width and its later
+    // lines would sit left of the avatar without this.
+    textAlign: "center",
   },
   position: {
     fontSize: 16,
     color: "#555",
     marginTop: 4,
+    textAlign: "center",
+    // Keeps a wrapped kargu off the screen edges.
+    paddingHorizontal: 16,
   },
   card: {
     backgroundColor: "#f9f9f9",
@@ -255,15 +261,27 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
+    // A value that wraps aligns its first line with the label rather than
+    // centring against it.
+    alignItems: "flex-start",
+    // Guarantees a gap: with space-between alone, a long value runs straight
+    // into the label once it fills the row.
+    columnGap: 12,
     marginBottom: 10,
   },
   label: {
     fontSize: 15,
     color: "#555",
+    // The label is a fixed string; the value is the part that gives way.
+    flexShrink: 0,
   },
   value: {
     fontSize: 15,
     fontWeight: "600",
+    // Bounded by the row, so a long kargu wraps inside the card instead of
+    // overflowing it. Short values are unchanged -- still flush right.
+    flex: 1,
+    textAlign: "right",
   },
   actionContainer: {
     marginVertical: 24,
