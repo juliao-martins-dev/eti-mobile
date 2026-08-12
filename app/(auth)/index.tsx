@@ -59,8 +59,8 @@ export default function LoginScreen() {
               source={require("@/assets/images/eti.jpg")} // change logo here!
               style={styles.logo}
             />
-            <Text style={styles.title}>ETI PRESENSA</Text>
-            <Text style={styles.subtitle}>Sistema Presensa Digital</Text>
+            <Text style={styles.title}>ETI PREZENSA</Text>
+            <Text style={styles.subtitle}>Sistema Prezensa Digital</Text>
           </View>
 
           {/* Form */}
