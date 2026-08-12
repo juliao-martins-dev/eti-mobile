@@ -251,6 +251,9 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   profileTextContainer: {
+    // Takes the width left beside the avatar so a long kargu wraps onto a
+    // second line instead of running off the edge.
+    flex: 1,
     rowGap: 6,
   },
   profileHeaderText: {
