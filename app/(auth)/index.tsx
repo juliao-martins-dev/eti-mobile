@@ -65,9 +65,9 @@ export default function LoginScreen() {
 
           {/* Form */}
           <View style={styles.form}>
-            <Text style={styles.label}>Username</Text>
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              placeholder="Hatama naran utilizador"
+              placeholder="naran@eti.tl"
               style={styles.input}
               value={username}
               onChangeText={setUsername}
@@ -76,7 +76,7 @@ export default function LoginScreen() {
 
             <Text style={styles.label}>Password</Text>
             <TextInput
-              placeholder="Hatama password"
+              placeholder="••••••••"
               style={styles.input}
               secureTextEntry
               value={password}
@@ -93,7 +93,7 @@ export default function LoginScreen() {
               }
             >
               {isSubmitting && <ActivityIndicator color="#FFFFFF" size={25} />}
-              <Text style={styles.buttonText}>Login</Text>
+              <Text style={styles.buttonText}>Tama</Text>
             </TouchableOpacity>
           </View>
 
