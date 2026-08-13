@@ -2,10 +2,20 @@ import Feather from "@expo/vector-icons/Feather";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { ISTORIA_COLORS } from "@/components/IstoriaSummary";
 import { apiErrorMessage } from "@/lib/api";
 import {
   displayName,
@@ -26,7 +36,16 @@ import {
 } from "@/lib/konfig";
 import type { AuthUser } from "@/lib/storage";
 
-const placehoderImage = require("@/assets/images/prof.jpg");
+const placehoderImage = require("@/assets/images/default.jpg");
+
+/**
+ * How close to the end counts as "the bottom", in points.
+ *
+ * The two copies of the button are identical and land in the same place at
+ * full scroll, so the hand-off only needs to happen once they have all but
+ * converged — small enough that nothing visibly moves.
+ */
+const NEAR_BOTTOM = 12;
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -34,6 +53,45 @@ export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [konfig, setKonfig] = useState<Konfig>(KONFIG_FALLBACK);
+  // The pinned copy is only needed while the inline one is out of reach.
+  const [atBottom, setAtBottom] = useState(false);
+  const pinnedOpacity = useRef(new Animated.Value(1)).current;
+
+  // Kept in refs because all three arrive from different callbacks and none
+  // of them should trigger a render on its own.
+  const offsetY = useRef(0);
+  const viewportHeight = useRef(0);
+  const contentHeight = useRef(0);
+
+  const evaluatePosition = useCallback(() => {
+    const scrollable = contentHeight.current - viewportHeight.current;
+
+    // Content shorter than the screen never scrolls, so it is already at the
+    // end — without this the pinned copy would sit there forever.
+    setAtBottom(
+      scrollable <= 0 || offsetY.current >= scrollable - NEAR_BOTTOM,
+    );
+  }, []);
+
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+
+      offsetY.current = contentOffset.y;
+      viewportHeight.current = layoutMeasurement.height;
+      contentHeight.current = contentSize.height;
+      evaluatePosition();
+    },
+    [evaluatePosition],
+  );
+
+  useEffect(() => {
+    Animated.timing(pinnedOpacity, {
+      toValue: atBottom ? 0 : 1,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [atBottom, pinnedOpacity]);
 
   useEffect(() => {
     let isMounted = true;
@@ -117,7 +175,20 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        onLayout={(event) => {
+          viewportHeight.current = event.nativeEvent.layout.height;
+          evaluatePosition();
+        }}
+        onContentSizeChange={(_width, height) => {
+          contentHeight.current = height;
+          evaluatePosition();
+        }}
+      >
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.back()}>
@@ -143,48 +214,96 @@ export default function ProfileScreen() {
           <Text style={styles.position}>{position}</Text>
         </View>
 
-        {/* Information Card */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Informasaun Pessoal</Text>
+        <InfoCard
+          title="Informasaun Pessoal"
+          rows={[
+            ["Naran", name],
+            ["Numeru ID", numeruId],
+            ["Kargu", position],
+            ["Email", email],
+            ["Tipu konta", role],
+          ]}
+        />
 
-          <ProfileRow label="Naran" value={name} />
-          <ProfileRow label="Numeru ID" value={numeruId} />
-          <ProfileRow label="Kargu" value={position} />
-          <ProfileRow label="Email" value={email} />
-          <ProfileRow label="Tipu konta" value={role} />
-        </View>
+        <InfoCard
+          title="Informasaun Servisu"
+          rows={[
+            ["Horariu Dader", dader],
+            ["Horariu Lorokraik", lorokraik],
+            ["Raiu eskola", raiu],
+          ]}
+        />
 
-        {/* Work Info */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Informasaun Servisu</Text>
-
-          <ProfileRow label="Horariu Dader" value={dader} />
-          <ProfileRow label="Horariu Lorokraik" value={lorokraik} />
-          <ProfileRow label="Raiu eskola" value={raiu} />
-        </View>
-
-        {/* Actions */}
-        <View style={styles.actionContainer}>
-          <Pressable
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            disabled={isLoggingOut}
-          >
-            <Feather name="log-out" size={20} color="#fff" />
-            <Text style={styles.logoutText}>Logout</Text>
-          </Pressable>
+        {/* The real button, at the end of the content where it belongs. */}
+        <View style={[styles.footerBar, styles.footerInline]}>
+          <LogoutButton onPress={handleLogout} disabled={isLoggingOut} />
         </View>
       </ScrollView>
+
+      {/*
+        A second copy pinned to the bottom, covering the inline one until it
+        scrolls into view. Both are identical and coincide at full scroll, so
+        the cross-fade reads as the footer simply settling into the page.
+        pointerEvents is dropped with the opacity, otherwise the invisible
+        copy would keep swallowing taps meant for the inline one.
+      */}
+      <Animated.View
+        pointerEvents={atBottom ? "none" : "auto"}
+        style={[styles.footerBar, styles.footerPinned, { opacity: pinnedOpacity }]}
+      >
+        <LogoutButton onPress={handleLogout} disabled={isLoggingOut} />
+      </Animated.View>
     </SafeAreaView>
   );
 }
 
-/* Small reusable row */
-function ProfileRow({ label, value }: { label: string; value: string }) {
+/**
+ * Rendered twice — inline and pinned — so the two copies can never drift
+ * apart. Anything less than an exact match would show up as a jump during
+ * the cross-fade.
+ */
+function LogoutButton({
+  onPress,
+  disabled,
+}: {
+  onPress: () => void;
+  disabled: boolean;
+}) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.value}>{value}</Text>
+    <Pressable style={styles.logoutButton} onPress={onPress} disabled={disabled}>
+      <Feather name="log-out" size={20} color="#fff" />
+      <Text style={styles.logoutText}>Sai (logout)</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * A titled group of label/value rows.
+ *
+ * Rows are separated by hairlines rather than gaps, so the card reads as one
+ * table instead of a stack of loose lines, and the title sits as a quiet
+ * eyebrow — it names the group without competing with the values.
+ */
+function InfoCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: [label: string, value: string][];
+}) {
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>{title}</Text>
+
+      {rows.map(([label, value], index) => (
+        <View
+          key={label}
+          style={[styles.row, index < rows.length - 1 && styles.rowDivider]}
+        >
+          <Text style={styles.label}>{label}</Text>
+          <Text style={styles.value}>{value}</Text>
+        </View>
+      ))}
     </View>
   );
 }
@@ -193,6 +312,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#fff",
+    // Deliberately no horizontal padding: React Native offsets absolutely
+    // positioned children by their parent's padding, which would make the
+    // pinned footer's left/right of 0 land 16pt inside the screen. The
+    // padding lives on the scroll content instead.
+  },
+  scrollContent: {
     paddingHorizontal: 16,
   },
   header: {
@@ -248,15 +373,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   card: {
-    backgroundColor: "#f9f9f9",
+    backgroundColor: ISTORIA_COLORS.card,
+    borderWidth: 1,
+    borderColor: ISTORIA_COLORS.track,
     borderRadius: 16,
-    padding: 16,
+    paddingHorizontal: 16,
     marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 12,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: ISTORIA_COLORS.subtle,
+    paddingTop: 16,
+    paddingBottom: 4,
   },
   row: {
     flexDirection: "row",
@@ -267,24 +398,49 @@ const styles = StyleSheet.create({
     // Guarantees a gap: with space-between alone, a long value runs straight
     // into the label once it fills the row.
     columnGap: 12,
-    marginBottom: 10,
+    paddingVertical: 12,
+  },
+  rowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
   },
   label: {
-    fontSize: 15,
-    color: "#555",
+    fontSize: 14,
+    color: ISTORIA_COLORS.subtle,
     // The label is a fixed string; the value is the part that gives way.
     flexShrink: 0,
   },
   value: {
     fontSize: 15,
     fontWeight: "600",
+    color: ISTORIA_COLORS.text,
     // Bounded by the row, so a long kargu wraps inside the card instead of
     // overflowing it. Short values are unchanged -- still flush right.
     flex: 1,
     textAlign: "right",
+    // Times and ID numbers line up column-wise between the two cards.
+    fontVariant: ["tabular-nums"],
   },
-  actionContainer: {
-    marginVertical: 24,
+  // Shared by both copies. Any difference here would show as a jump when one
+  // fades into the other.
+  footerBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    // Opaque and same as the screen: cards scrolling under it stay hidden.
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: ISTORIA_COLORS.track,
+  },
+  footerInline: {
+    // Cancels the scroll content's 16pt padding so the border runs edge to
+    // edge, exactly like the pinned copy above it.
+    marginHorizontal: -16,
+  },
+  footerPinned: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   logoutButton: {
     flexDirection: "row",
