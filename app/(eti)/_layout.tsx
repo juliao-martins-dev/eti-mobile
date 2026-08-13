@@ -6,6 +6,7 @@ import { AppState } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
 import {
+  backfillReminders,
   badgeValue,
   recordReminder,
   syncDeliveredReminders,
@@ -59,6 +60,13 @@ export default function RootLayout() {
   // from the phone's own tray. Deduplicated per slot per day.
   useEffect(() => {
     const catchUp = () => {
+      // Belt: derived from the schedule, so it works even when the tray was
+      // emptied. Braces: the tray still carries anything the schedule cannot
+      // know about, such as a test reminder.
+      backfillReminders().catch(() => {
+        // Konfig unreachable — the next foreground tries again.
+      });
+
       syncDeliveredReminders().catch(() => {
         // Nothing delivered, or notifications unavailable.
       });
