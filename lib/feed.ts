@@ -2,9 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useState } from "react";
 
 import { formatOras } from "./istoria";
+import { fetchKonfig } from "./konfig";
 import {
   clearTappedReminder,
   deliveredReminders,
+  plannedReminders,
   tappedReminder,
 } from "./notifications";
 import {
@@ -298,6 +300,50 @@ export const recordReminder = (
  *
  * @returns how many entries were new.
  */
+/**
+ * Fills `Fo hanoin` from the schedule itself, without asking the OS anything.
+ *
+ * The tray sync below can only see reminders still sitting in the tray, so a
+ * reminder that fired while the app was closed and was then swiped away — or
+ * cleared by "Hamoos notifikasaun hotu", which empties the tray — could never
+ * reach the list. That is why the tab was permanently empty.
+ *
+ * This walks today's planned reminders and records every one whose time has
+ * already passed. Times come from `GET /api/konfig/` minus the lead, so
+ * nothing here is hardcoded, and Saturday's missing afternoon is respected
+ * because plannedReminders() already encodes it.
+ *
+ * Idempotent: `reminderKey(slot, at)` is one entry per slot per day, shared
+ * with the listener and the tray path, so an alarm seen twice is listed once.
+ *
+ * @returns how many entries were new.
+ */
+export async function backfillReminders(
+  now: Date = new Date(),
+): Promise<number> {
+  const konfig = await fetchKonfig();
+
+  // expo-notifications weekdays are 1 = Sunday; JS getDay() is 0 = Sunday.
+  const weekday = now.getDay() + 1;
+  const today = plannedReminders(konfig).filter(
+    (planned) => planned.weekday === weekday,
+  );
+
+  const before = (await getFeed()).length;
+
+  for (const { hour, minute, slot } of today) {
+    const at = new Date(now);
+    at.setHours(hour, minute, 0, 0);
+
+    // Still to come today — recording it now would be a lie.
+    if (at.getTime() > now.getTime()) continue;
+
+    await recordReminder(slot.title, slot.body, slot.key, at);
+  }
+
+  return (await getFeed()).length - before;
+}
+
 export async function syncDeliveredReminders(): Promise<number> {
   const tapped = tappedReminder();
   const delivered = await deliveredReminders();
