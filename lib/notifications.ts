@@ -1,3 +1,4 @@
+import { isRunningInExpoGo } from "expo";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
@@ -208,14 +209,32 @@ export function plannedReminders(konfig: Konfig) {
   return planned;
 }
 
+/**
+ * Whether the app may post notifications.
+ *
+ * `granted` alone is not enough on iOS: provisional authorisation delivers
+ * quietly to the notification centre and reports `granted: false`. Reading only
+ * `granted` made scheduleReminders() bail out and schedule nothing at all on
+ * every iPhone in that state.
+ */
+export function isAllowed(
+  status: Notifications.NotificationPermissionsStatus,
+): boolean {
+  return (
+    status.granted ||
+    status.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
+  );
+}
+
 async function ensurePermission(): Promise<boolean> {
   const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
+  if (isAllowed(current)) return true;
 
   if (!current.canAskAgain) return false;
 
+  // Defaults to alert + sound + badge, which is what a reminder needs.
   const asked = await Notifications.requestPermissionsAsync();
-  return asked.granted;
+  return isAllowed(asked);
 }
 
 /**
@@ -228,6 +247,67 @@ export async function cancelReminders(): Promise<void> {
   } catch {
     // Notifications unavailable on this device — nothing to cancel.
   }
+}
+
+/**
+ * The state of the reminders on *this* phone.
+ *
+ * Everything about scheduling happens inside the OS, so this reads it back:
+ * whether notifications are allowed, how many alarms the system is holding,
+ * and when each one next fires. `scheduleReminders()` swallows its failures so
+ * a punch is never blocked, which also means a silent failure leaves no trace
+ * — this is how to see one.
+ */
+export type ReminderDiagnostics = {
+  /** Expo Go does not fully support expo-notifications; a build is needed. */
+  expoGo: boolean;
+  /** "granted" | "denied" | "undetermined" */
+  permission: string;
+  allowed: boolean;
+  canAskAgain: boolean;
+  /** How many alarms the OS is holding. Should be 22. */
+  scheduled: number;
+  /** Every held alarm, soonest first. */
+  alarms: { title: string; weekday: number; hour: number; minute: number }[];
+};
+
+export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
+  const status = await Notifications.getPermissionsAsync();
+
+  let requests: Notifications.NotificationRequest[] = [];
+  try {
+    requests = await Notifications.getAllScheduledNotificationsAsync();
+  } catch {
+    // Unsupported platform — leave the list empty rather than throw.
+  }
+
+  const alarms = requests
+    .map((request) => {
+      const trigger = request.trigger as Partial<{
+        weekday: number;
+        hour: number;
+        minute: number;
+      }> | null;
+
+      return {
+        title: request.content.title ?? "",
+        weekday: trigger?.weekday ?? 0,
+        hour: trigger?.hour ?? 0,
+        minute: trigger?.minute ?? 0,
+      };
+    })
+    .sort((a, b) =>
+      a.weekday - b.weekday || a.hour - b.hour || a.minute - b.minute,
+    );
+
+  return {
+    expoGo: isRunningInExpoGo(),
+    permission: status.status,
+    allowed: isAllowed(status),
+    canAskAgain: status.canAskAgain,
+    scheduled: requests.length,
+    alarms,
+  };
 }
 
 /**
