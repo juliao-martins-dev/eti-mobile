@@ -8,6 +8,7 @@ import Feather from "@expo/vector-icons/Feather";
 import { Link, useFocusEffect, useRouter } from "expo-router";
 
 import { IstoriaMiniCard } from "@/components/IstoriaMiniCard";
+import { ISTORIA_COLORS } from "@/components/IstoriaSummary";
 import {
   displayName,
   fetchMe,
@@ -61,7 +62,7 @@ export default function Index() {
         });
 
       // The two most recent working days, for the history preview below.
-      fetchRecentDays(3)
+      fetchRecentDays(2)
         .then((days) => {
           if (isMounted) setRecent(days);
         })
@@ -119,8 +120,9 @@ export default function Index() {
     const minute = parts.find((p) => p.type === "minute")?.value;
     const second = parts.find((p) => p.type === "second")?.value;
 
-    // OTL — Oras Timor-Leste.
-    return `${hour}:${minute}:${second} OTL`;
+    // The OTL suffix is rendered beside this, not baked into the digits, so
+    // the clock can use tabular figures on its own.
+    return `${hour}:${minute}:${second}`;
   }
 
   const goToRegister = (tipu: MarkaTipu) => {
@@ -130,8 +132,10 @@ export default function Index() {
   const remotePhoto = photoUrl(user);
   const avatarSource = remotePhoto ? { uri: remotePhoto } : placehoderImage;
 
-  const tama = formatOras(today?.oras_tama) ?? "--:--:--";
-  const fila = formatOras(today?.oras_fila) ?? "--:--:--";
+  // Null rather than a placeholder: the column decides how an unmarked slot
+  // looks, and whether it shows a button or a stamp.
+  const tama = formatOras(today?.oras_tama);
+  const fila = formatOras(today?.oras_fila);
 
   // The server owns the button state. While today's row is still loading we
   // leave both enabled rather than block a punch the server might accept.
@@ -159,42 +163,32 @@ export default function Index() {
 
         {/* oras + marka */}
         <View style={styles.orasCard}>
-          <View style={styles.orasHeader}>
-            <View style={styles.orasHeaderRow}>
-              <Text style={styles.date}>{formattedDate}</Text>
-              <Text style={styles.time}>{formatOrasDili(date)}</Text>
-            </View>
-            <View style={styles.lines} />
+          <Text style={styles.orasEyebrow}>{formattedDate}</Text>
+
+          <View style={styles.orasClockRow}>
+            <Text style={styles.orasClock}>{formatOrasDili(date)}</Text>
+            <Text style={styles.orasZone}>OTL</Text>
           </View>
+
+          <View style={styles.orasDivider} />
+
           <View style={styles.markaRow}>
-            <View style={styles.checkinCol}>
-              <Text>{tama}</Text>
-              <Pressable
-                style={[
-                  styles.markaButton,
-                  !beleCheckin && styles.markaButtonOff,
-                ]}
-                disabled={!beleCheckin}
-                onPress={() => goToRegister("checkin")}
-              >
-                <Feather name="log-in" size={24} color="#fff" />
-                <Text style={styles.markaButtonText}>Checkin</Text>
-              </Pressable>
-            </View>
-            <View style={styles.checkoutCol}>
-              <Text>{fila}</Text>
-              <Pressable
-                style={[
-                  styles.markaButton,
-                  !beleCheckout && styles.markaButtonOff,
-                ]}
-                disabled={!beleCheckout}
-                onPress={() => goToRegister("checkout")}
-              >
-                <Feather name="log-out" size={24} color="#fff" />
-                <Text style={styles.markaButtonText}>Checkout</Text>
-              </Pressable>
-            </View>
+            <MarkaColumn
+              label="Tama"
+              icon="log-in"
+              oras={tama}
+              enabled={beleCheckin}
+              action="Checkin"
+              onPress={() => goToRegister("checkin")}
+            />
+            <MarkaColumn
+              label="Sai"
+              icon="log-out"
+              oras={fila}
+              enabled={beleCheckout}
+              action="Checkout"
+              onPress={() => goToRegister("checkout")}
+            />
           </View>
         </View>
         {/* end of oras + marka */}
@@ -222,6 +216,71 @@ export default function Index() {
         {/* end of recent history */}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/**
+ * One session of the day: its label, its time, and either the action that
+ * records it or the stamp proving it is done.
+ *
+ * A recorded punch is never shown as a disabled button — on the paper sheet
+ * this app mirrors, a signed box has ink in it, not a control you cannot use.
+ */
+function MarkaColumn({
+  label,
+  icon,
+  oras,
+  enabled,
+  action,
+  onPress,
+}: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  oras: string | null;
+  enabled: boolean;
+  action: string;
+  onPress: () => void;
+}) {
+  return (
+    <View style={styles.markaCol}>
+      <Text style={styles.markaLabel}>{label}</Text>
+
+      <Text
+        style={[
+          styles.markaOras,
+          oras ? styles.markaOrasDone : styles.markaOrasEmpty,
+        ]}
+      >
+        {oras ?? "--:--"}
+      </Text>
+
+      {oras ? (
+        <View style={styles.markaStamp}>
+          <Feather name="check" size={14} color={ISTORIA_COLORS.present} />
+          <Text style={styles.markaStampText}>Marka ona</Text>
+        </View>
+      ) : (
+        <Pressable
+          style={[styles.markaButton, !enabled && styles.markaButtonOff]}
+          disabled={!enabled}
+          onPress={onPress}
+        >
+          <Feather
+            name={icon}
+            size={16}
+            color={enabled ? "#FFFFFF" : ISTORIA_COLORS.muted}
+          />
+          <Text
+            style={[
+              styles.markaButtonText,
+              !enabled && styles.markaButtonTextOff,
+            ]}
+          >
+            {action}
+          </Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -261,60 +320,106 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   orasCard: {
-    marginTop: 32,
+    marginTop: 24,
+    backgroundColor: ISTORIA_COLORS.card,
     borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 16,
-    padding: 16,
+    borderColor: ISTORIA_COLORS.track,
+    borderRadius: 18,
+    padding: 18,
   },
-  orasHeader: {
-    marginBottom: 16,
+  orasEyebrow: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    color: ISTORIA_COLORS.subtle,
   },
-  orasHeaderRow: {
+  orasClockRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "baseline",
+    columnGap: 8,
+    marginTop: 6,
   },
-  date: {
-    fontSize: 16,
+  orasClock: {
+    fontSize: 32,
+    fontWeight: "700",
+    color: ISTORIA_COLORS.text,
+    // The seconds tick every second; without this the whole line jitters.
+    fontVariant: ["tabular-nums"],
   },
-  time: {
-    fontWeight: "bold",
-    fontSize: 16,
+  orasZone: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: ISTORIA_COLORS.muted,
   },
-  lines: {
+  orasDivider: {
     height: 1,
-    width: "100%",
-    backgroundColor: "#ccc",
+    backgroundColor: ISTORIA_COLORS.track,
     marginVertical: 16,
   },
   markaRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    columnGap: 12,
   },
-  checkinCol: {
-    alignItems: "center",
-    columnGap: 8,
+  markaCol: {
+    // Equal halves, so the two sessions read as a pair rather than two
+    // buttons sized by their own text.
+    flex: 1,
   },
-  checkoutCol: {
+  markaLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    color: ISTORIA_COLORS.muted,
+  },
+  markaOras: {
+    fontSize: 22,
+    fontWeight: "700",
+    marginTop: 2,
+    fontVariant: ["tabular-nums"],
+  },
+  markaOrasDone: {
+    color: ISTORIA_COLORS.present,
+  },
+  markaOrasEmpty: {
+    color: ISTORIA_COLORS.muted,
+  },
+  markaStamp: {
+    flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
+    columnGap: 5,
+    marginTop: 10,
+    // Matches the button height so a stamped column and an actionable one
+    // stay the same height.
+    height: 44,
+  },
+  markaStampText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: ISTORIA_COLORS.present,
   },
   markaButton: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 8,
-    marginTop: 8,
+    justifyContent: "center",
+    columnGap: 6,
+    marginTop: 10,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: "#007AFF",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 8,
   },
   markaButtonOff: {
-    opacity: 0.4,
+    // A solid neutral, not a faded blue: unavailable, not broken.
+    backgroundColor: "#F1F5F9",
   },
   markaButtonText: {
     color: "#fff",
-    fontSize: 19,
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  markaButtonTextOff: {
+    color: ISTORIA_COLORS.muted,
   },
   historiaContainer: {
     marginTop: 32,
