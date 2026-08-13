@@ -20,10 +20,12 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+// `key` matches FeedItem.kind and is what the filter compares; `label` is the
+// only part shown to the teacher.
 const TABS = [
   { key: "HOTU", label: "Hotu" },
   { key: "PREZENSA", label: "Prezensa" },
-  { key: "LEMBRA", label: "Lembra" },
+  { key: "LEMBRA", label: "Fo hanoin" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
