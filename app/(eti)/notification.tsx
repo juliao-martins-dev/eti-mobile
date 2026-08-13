@@ -21,11 +21,24 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 // `key` matches FeedItem.kind and is what the filter compares; `label` is the
-// only part shown to the teacher.
+// only part shown to the teacher. `empty` says why *this* tab is empty —
+// three different situations that one shared sentence could not explain.
 const TABS = [
-  { key: "HOTU", label: "Hotu" },
-  { key: "PREZENSA", label: "Prezensa" },
-  { key: "LEMBRA", label: "Fo hanoin" },
+  {
+    key: "HOTU",
+    label: "Hotu",
+    empty: "Rezultadu prezensa no fo hanoin sei mosu iha ne’e.",
+  },
+  {
+    key: "PREZENSA",
+    label: "Prezensa",
+    empty: "Bainhira ita halo checkin ka checkout, rezultadu sei mosu iha ne’e.",
+  },
+  {
+    key: "LEMBRA",
+    label: "Fo hanoin",
+    empty: "Fo hanoin ba oras tama no sai sei mosu iha ne’e molok oras orariu.",
+  },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -88,7 +101,9 @@ export default function NotifikasaunScreen() {
 
       {/* Content */}
       {filteredData.length === 0 ? (
-        <EmptyNotification />
+        <EmptyNotification
+          message={TABS.find((tab) => tab.key === activeTab)?.empty}
+        />
       ) : (
         <FlatList
           data={filteredData}
