@@ -44,6 +44,7 @@ export default function Index() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [today, setToday] = useState<Ohin | null>(null);
   const [recent, setRecent] = useState<LoronRecord[]>([]);
+  const [linkPressed, setLinkPressed] = useState(false);
   const router = useRouter();
 
   // Refetch on focus: today's stamps after a punch, and the profile so a photo
@@ -198,9 +199,26 @@ export default function Index() {
           <View style={styles.historiaHeader}>
             <Text style={styles.historiaHeaderText}>Historia prezensa</Text>
             <Link href="/history" asChild>
-              <Pressable style={styles.historiaLink} hitSlop={8}>
-                <Feather name="clock" size={15} color="#666" />
-                <Text style={styles.historiaHeaderSubtext}>Hare liu taan</Text>
+              <Pressable
+                hitSlop={8}
+                onPressIn={() => setLinkPressed(true)}
+                onPressOut={() => setLinkPressed(false)}
+                /*
+                  Must be a single flattened object. `asChild` renders through
+                  Radix's Slot, which merges style with `{...slot, ...child}`;
+                  spreading a function gives {} and spreading an array gives
+                  numeric keys, so either one silently drops every style and
+                  the pill collapses to a default column View.
+                */
+                style={StyleSheet.flatten([
+                  styles.historiaLink,
+                  linkPressed && styles.historiaLinkPressed,
+                ])}
+              >
+                <Text style={styles.historiaLinkText} numberOfLines={1}>
+                  Hare liu taan
+                </Text>
+                <Feather name="chevron-right" size={16} color="#007AFF" />
               </Pressable>
             </Link>
           </View>
@@ -434,16 +452,31 @@ const styles = StyleSheet.create({
   historiaHeaderText: {
     fontSize: 20,
     fontWeight: "bold",
+    // The heading gives way, never the control: at a large system font scale
+    // it wraps instead of squeezing the pill.
+    flex: 1,
+    marginRight: 12,
   },
   historiaLink: {
     flexDirection: "row",
     alignItems: "center",
-    columnGap: 6,
+    flexShrink: 0,
+    // Tight: the chevron reads as punctuation on the label, not a sibling.
+    columnGap: 2,
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 7,
+    // Same pill idiom as the status badges on the history cards.
+    borderRadius: 999,
+    backgroundColor: "#EAF3FF",
   },
-  historiaHeaderSubtext: {
-    fontSize: 16,
-    color: "#666",
-    textDecorationLine: "underline",
+  historiaLinkPressed: {
+    backgroundColor: "#D7E8FF",
+  },
+  historiaLinkText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#007AFF",
   },
   historiaEmpty: {
     fontSize: 14,
