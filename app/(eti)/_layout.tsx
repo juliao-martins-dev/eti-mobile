@@ -21,8 +21,11 @@ export default function RootLayout() {
   // Reschedule once the teacher is inside the app. Idempotent, and it picks up
   // any change to the school's hours from /api/konfig/.
   useEffect(() => {
-    scheduleReminders().catch(() => {
-      // Permission refused or notifications unavailable — not fatal.
+    scheduleReminders().catch((error) => {
+      // Still not fatal — a punch must never depend on this — but no longer
+      // silent: a phone holding zero alarms used to look identical to a
+      // working one from in here.
+      console.warn("[lembra] scheduleReminders threw:", error);
     });
   }, []);
 
