@@ -6,6 +6,9 @@ import { fetchKonfig, timeToMinutes, type Konfig } from "./konfig";
 
 const CHANNEL_ID = "prezensa-lembra";
 
+/** `data.slot` on a test notification, so it is never mistaken for a real one. */
+export const TEST_SLOT = "testa";
+
 /** How long before the scheduled time the reminder fires. */
 export const LEAD_MINUTES = 10;
 
@@ -73,6 +76,39 @@ Notifications.setNotificationHandler({
   }),
 });
 
+/* ------------------------------------------------------------------ *
+ * Channel
+ *
+ * One channel for everything this app posts — reminders and punch results
+ * alike — so both get the same HIGH importance and heads-up banner.
+ *
+ * Created at module load rather than inside scheduleReminders(): that put it
+ * behind the permission gate, so a teacher who refused once had no channel at
+ * all, and every later notification fell back to Expo's default.
+ * ------------------------------------------------------------------ */
+
+let channelReady: Promise<void> | null = null;
+
+export function ensureChannel(): Promise<void> {
+  if (Platform.OS !== "android") return Promise.resolve();
+
+  channelReady ??= Notifications.setNotificationChannelAsync(CHANNEL_ID, {
+    name: "Lembra prezensa",
+    importance: Notifications.AndroidImportance.HIGH,
+    vibrationPattern: [0, 250, 250, 250],
+    lightColor: "#007AFF",
+  })
+    .then(() => {})
+    .catch(() => {
+      // Notifications unavailable here; posting will fail loudly enough.
+    });
+
+  return channelReady;
+}
+
+// Android drops a notification posted to a channel that does not exist yet.
+ensureChannel();
+
 /**
  * Shows a notification immediately (trigger `null`).
  *
@@ -82,13 +118,50 @@ Notifications.setNotificationHandler({
  */
 export async function notifyNow(title: string, body: string): Promise<void> {
   try {
+    await ensureChannel();
+
     await Notifications.scheduleNotificationAsync({
-      content: { title, body },
-      trigger: null,
+      content: {
+        title,
+        body,
+        // Without this Android posts silently into the drawer instead of
+        // showing a heads-up banner.
+        priority: Notifications.AndroidNotificationPriority.HIGH,
+      },
+      // A bare `null` means "now", but also "no channel", which dropped punch
+      // results onto Expo's default channel. This form means "now, on ours".
+      trigger:
+        Platform.OS === "android" ? { channelId: CHANNEL_ID } : null,
     });
   } catch {
     // Permission refused or unsupported — the in-app feed still has it.
   }
+}
+
+/**
+ * Posts a reminder in `seconds`, for checking delivery without waiting until
+ * 07:50. Carries `data.slot` so it travels the same path a real reminder does,
+ * proving the feed as well as the tray.
+ */
+export async function scheduleTestReminder(seconds = 60): Promise<boolean> {
+  if (!(await ensurePermission())) return false;
+
+  await ensureChannel();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: "Testa lembra prezensa",
+      body: "Se ita simu mensajen ne'e, lembra prezensa funsiona iha telefone ne'e.",
+      data: { slot: TEST_SLOT },
+      priority: Notifications.AndroidNotificationPriority.HIGH,
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds,
+      channelId: CHANNEL_ID,
+    },
+  });
+
+  return true;
 }
 
 /* ------------------------------------------------------------------ *
@@ -269,7 +342,38 @@ export type ReminderDiagnostics = {
   scheduled: number;
   /** Every held alarm, soonest first. */
   alarms: { title: string; weekday: number; hour: number; minute: number }[];
+  /**
+   * Minutes the device clock is ahead of Dili. Non-zero means every reminder
+   * fires at the wrong moment relative to the school day.
+   */
+  desvioOras: number;
 };
+
+/**
+ * How far the device clock sits from the school's, in minutes.
+ *
+ * A weekly trigger carries only `weekday`, `hour` and `minute`, and Android
+ * resolves them with `Calendar.getInstance()` — the device timezone. A phone
+ * left on WIB fires "07:50" an hour off the school's 07:50, and no scheduling
+ * option can correct it. All the app can do is notice and say so.
+ */
+export function desvioOrasDili(now: Date = new Date()): number {
+  const dili = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Dili",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(now);
+
+  const [hour, minute] = dili.split(":").map(Number);
+  let diff = now.getHours() * 60 + now.getMinutes() - (hour * 60 + minute);
+
+  // Normalise across midnight: the two clocks are never 23 hours apart.
+  if (diff > 720) diff -= 1440;
+  if (diff < -720) diff += 1440;
+
+  return diff;
+}
 
 export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
   const status = await Notifications.getPermissionsAsync();
@@ -307,6 +411,7 @@ export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
     canAskAgain: status.canAskAgain,
     scheduled: requests.length,
     alarms,
+    desvioOras: desvioOrasDili(),
   };
 }
 
@@ -322,19 +427,16 @@ export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
 export async function scheduleReminders(): Promise<number> {
   if (!(await ensurePermission())) return 0;
 
-  if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-      name: "Lembra prezensa",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#007AFF",
-    });
-  }
-
-  await cancelReminders();
-
+  // Everything slow happens BEFORE anything is destroyed. fetchKonfig() is a
+  // real request — 12s timeout, and again on the second host after a failover.
+  // Cancelling first left the phone holding zero alarms for that whole window,
+  // and a teacher who opened the app off-network and switched away had them
+  // wiped with nothing scheduled in their place.
   const konfig = await fetchKonfig();
   const planned = plannedReminders(konfig);
+
+  await ensureChannel();
+  await cancelReminders();
 
   for (const { weekday, hour, minute, slot } of planned) {
     await Notifications.scheduleNotificationAsync({
@@ -342,6 +444,7 @@ export async function scheduleReminders(): Promise<number> {
         title: slot.title,
         body: slot.body,
         data: { slot: slot.key, weekday },
+        priority: Notifications.AndroidNotificationPriority.HIGH,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
