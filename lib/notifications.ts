@@ -425,7 +425,28 @@ export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
  * @returns how many reminders are now scheduled (0 if permission was refused).
  */
 export async function scheduleReminders(): Promise<number> {
-  if (!(await ensurePermission())) return 0;
+  // Every failure below used to be invisible: the caller swallows the error so
+  // a punch is never blocked, so a phone with zero alarms looked exactly like
+  // a phone with 22. One line per attempt, greppable in `expo start` output
+  // and in `adb logcat -s ReactNativeJS`.
+  const status = await Notifications.getPermissionsAsync();
+
+  if (!isAllowed(status)) {
+    if (!status.canAskAgain) {
+      console.warn(
+        `[lembra] refused: permission=${status.status}, canAskAgain=false — nothing scheduled`,
+      );
+      return 0;
+    }
+
+    const asked = await Notifications.requestPermissionsAsync();
+    if (!isAllowed(asked)) {
+      console.warn(
+        `[lembra] refused: permission=${asked.status} after asking — nothing scheduled`,
+      );
+      return 0;
+    }
+  }
 
   // Everything slow happens BEFORE anything is destroyed. fetchKonfig() is a
   // real request — 12s timeout, and again on the second host after a failover.
@@ -455,6 +476,28 @@ export async function scheduleReminders(): Promise<number> {
       },
     });
   }
+
+  // What the OS says it is holding, not what we believe we sent. A mismatch
+  // here is the difference between "our bug" and "the phone dropped them".
+  let held = -1;
+  try {
+    held = (await Notifications.getAllScheduledNotificationsAsync()).length;
+  } catch {
+    // Unsupported — leave it as -1 so the log says "unknown", not "zero".
+  }
+
+  const desvio = desvioOrasDili();
+  const oras = [
+    konfig.oras_dader_tama,
+    konfig.oras_dader_fila,
+    konfig.oras_lorokraik_tama,
+    konfig.oras_lorokraik_fila,
+  ].join(" ");
+
+  console.warn(
+    `[lembra] planned=${planned.length} heldByOS=${held} ` +
+      `expoGo=${isRunningInExpoGo()} tzOffsetVsDili=${desvio}min konfig=[${oras}]`,
+  );
 
   return planned.length;
 }
