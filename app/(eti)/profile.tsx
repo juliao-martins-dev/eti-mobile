@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { ISTORIA_COLORS } from "@/components/IstoriaSummary";
+import { ReminderDiagnosticsPanel } from "@/components/ReminderDiagnostics";
 import { apiErrorMessage } from "@/lib/api";
 import {
   displayName,
@@ -53,6 +54,7 @@ export default function ProfileScreen() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [konfig, setKonfig] = useState<Konfig>(KONFIG_FALLBACK);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   // The pinned copy is only needed while the inline one is out of reach.
   const [atBottom, setAtBottom] = useState(false);
   const pinnedOpacity = useRef(new Animated.Value(1)).current;
@@ -232,6 +234,7 @@ export default function ProfileScreen() {
             ["Horariu Lorokraik", lorokraik],
             ["Raiu eskola", raiu],
           ]}
+          onLongPressTitle={() => setDiagnosticsOpen(true)}
         />
 
         {/* The real button, at the end of the content where it belongs. */}
@@ -239,6 +242,11 @@ export default function ProfileScreen() {
           <LogoutButton onPress={handleLogout} disabled={isLoggingOut} />
         </View>
       </ScrollView>
+
+      <ReminderDiagnosticsPanel
+        visible={diagnosticsOpen}
+        onClose={() => setDiagnosticsOpen(false)}
+      />
 
       {/*
         A second copy pinned to the bottom, covering the inline one until it
@@ -287,13 +295,22 @@ function LogoutButton({
 function InfoCard({
   title,
   rows,
+  onLongPressTitle,
 }: {
   title: string;
   rows: [label: string, value: string][];
+  /** Undocumented on purpose: the diagnostics are for whoever maintains this. */
+  onLongPressTitle?: () => void;
 }) {
   return (
     <View style={styles.card}>
-      <Text style={styles.cardTitle}>{title}</Text>
+      <Text
+        style={styles.cardTitle}
+        onLongPress={onLongPressTitle}
+        suppressHighlighting
+      >
+        {title}
+      </Text>
 
       {rows.map(([label, value], index) => (
         <View
