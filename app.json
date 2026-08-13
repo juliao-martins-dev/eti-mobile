@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "ETI PRESENSA",
-    "slug": "EtiPresenca",
+    "name": "ETI PREZENSA",
+    "slug": "EtiPrezenca",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "etipresenca",
+    "scheme": "etiprezenca",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
