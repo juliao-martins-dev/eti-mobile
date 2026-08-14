@@ -1,11 +1,11 @@
 {
   "expo": {
     "name": "ETI PREZENSA",
-    "slug": "EtiPrezenca",
+    "slug": "EtiPrezensa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "etiprezenca",
+    "scheme": "etiprezensa",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -19,7 +19,12 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.juliao125.EtiPresenca"
+      "package": "com.juliao125.EtiPrezensa",
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "static",
@@ -69,7 +74,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "eebed8ec-ee22-4a40-b9bd-4cce6da47be8"
+        "projectId": "48be7b11-7e4f-4f94-91a8-8b58856d37dd"
       }
     }
   }
