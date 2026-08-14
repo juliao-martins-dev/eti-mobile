@@ -347,7 +347,32 @@ export type ReminderDiagnostics = {
    * fires at the wrong moment relative to the school day.
    */
   desvioOras: number;
+  /**
+   * The Android channel's importance, read back from the OS. A channel that
+   * does not exist, or that the teacher has turned down, silences every alarm
+   * attached to it no matter how correctly it was scheduled — and Android
+   * refuses to let the app raise it again once lowered.
+   */
+  channel: "laiha" | "kiik" | "HIGH" | "seluk";
 };
+
+/** Reads back the channel alarms are attached to, not the one we asked for. */
+async function channelState(): Promise<ReminderDiagnostics["channel"]> {
+  if (Platform.OS !== "android") return "HIGH";
+
+  try {
+    const channel = await Notifications.getNotificationChannelAsync(CHANNEL_ID);
+    if (!channel) return "laiha";
+
+    if (channel.importance >= Notifications.AndroidImportance.HIGH) return "HIGH";
+    // MIN or NONE means the OS shows no banner, or nothing at all.
+    if (channel.importance <= Notifications.AndroidImportance.LOW) return "kiik";
+
+    return "seluk";
+  } catch {
+    return "seluk";
+  }
+}
 
 /**
  * How far the device clock sits from the school's, in minutes.
@@ -412,6 +437,7 @@ export async function reminderDiagnostics(): Promise<ReminderDiagnostics> {
     scheduled: requests.length,
     alarms,
     desvioOras: desvioOrasDili(),
+    channel: await channelState(),
   };
 }
 
