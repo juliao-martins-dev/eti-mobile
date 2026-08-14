@@ -8,7 +8,8 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test:reminders": "tsc lib/notifications.ts --outDir node_modules/.cache/reminders-test --module commonjs --target es2020 --esModuleInterop --skipLibCheck --moduleResolution node && node scripts/reminders.test.js"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
