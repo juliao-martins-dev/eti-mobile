@@ -70,14 +70,13 @@ export default function ProfileScreen() {
 
     // Content shorter than the screen never scrolls, so it is already at the
     // end — without this the pinned copy would sit there forever.
-    setAtBottom(
-      scrollable <= 0 || offsetY.current >= scrollable - NEAR_BOTTOM,
-    );
+    setAtBottom(scrollable <= 0 || offsetY.current >= scrollable - NEAR_BOTTOM);
   }, []);
 
   const handleScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, layoutMeasurement, contentSize } = event.nativeEvent;
+      const { contentOffset, layoutMeasurement, contentSize } =
+        event.nativeEvent;
 
       offsetY.current = contentOffset.y;
       viewportHeight.current = layoutMeasurement.height;
@@ -257,7 +256,11 @@ export default function ProfileScreen() {
       */}
       <Animated.View
         pointerEvents={atBottom ? "none" : "auto"}
-        style={[styles.footerBar, styles.footerPinned, { opacity: pinnedOpacity }]}
+        style={[
+          styles.footerBar,
+          styles.footerPinned,
+          { opacity: pinnedOpacity },
+        ]}
       >
         <LogoutButton onPress={handleLogout} disabled={isLoggingOut} />
       </Animated.View>
@@ -278,7 +281,11 @@ function LogoutButton({
   disabled: boolean;
 }) {
   return (
-    <Pressable style={styles.logoutButton} onPress={onPress} disabled={disabled}>
+    <Pressable
+      style={styles.logoutButton}
+      onPress={onPress}
+      disabled={disabled}
+    >
       <Feather name="log-out" size={20} color="#fff" />
       <Text style={styles.logoutText}>Sai (logout)</Text>
     </Pressable>
