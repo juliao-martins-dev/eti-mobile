@@ -94,6 +94,15 @@ export function ReminderDiagnosticsPanel({
                   ok={data.scheduled === 22}
                 />
                 <Row
+                  label="Kanal prezensa-lembra"
+                  value={
+                    { laiha: "Laiha", kiik: "Kiik liu", HIGH: "OK", seluk: "?" }[
+                      data.channel
+                    ]
+                  }
+                  ok={data.channel === "HIGH"}
+                />
+                <Row
                   label="Expo Go"
                   value={data.expoGo ? "Sim" : "Lae"}
                   ok={!data.expoGo}
@@ -112,6 +121,14 @@ export function ReminderDiagnosticsPanel({
                   <Text style={styles.warning}>
                     Iha Expo Go, fo hanoin la garante bainhira aplikasaun taka.
                     Presiza build (npx expo run:android) atu testa loloos.
+                  </Text>
+                ) : null}
+
+                {data.channel === "kiik" ? (
+                  <Text style={styles.warning}>
+                    Kanal notifikasaun hamriik ho importansia kiik. Aplikasaun
+                    labele hasa’e fila fali — presiza troka iha konfigurasaun
+                    telefone: Notifications → Lembra prezensa.
                   </Text>
                 ) : null}
 
