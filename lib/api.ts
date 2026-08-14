@@ -5,7 +5,13 @@ import axios, {
 } from "axios";
 import { router } from "expo-router";
 
-import { API_BASE_URL, API_HOSTS, AUTH_ENDPOINTS, PUBLIC_PATHS } from "./config";
+import {
+  API_BASE_URL,
+  API_HOSTS,
+  AUTH_ENDPOINTS,
+  KONFIG_ENDPOINT,
+  PUBLIC_PATHS,
+} from "./config";
 import {
   clearSession,
   getAccessToken,
@@ -17,8 +23,8 @@ import {
 
 type RetriableConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
-  /** How many candidate hosts this request has already burned through. */
-  _hostsTried?: number;
+  /** One host re-resolution per request; a second would just stall again. */
+  _hostResolved?: boolean;
 };
 
 export const api = axios.create({
@@ -81,15 +87,79 @@ export function backgroundPost(
   });
 }
 
-/** Rotates to the next candidate and remembers it. */
-async function switchToNextHost(): Promise<string | null> {
-  if (API_HOSTS.length < 2) return null;
+/**
+ * Long enough for a LAN round trip, short enough that a host on a subnet the
+ * phone cannot reach is written off in seconds rather than after the full
+ * request timeout.
+ */
+const PROBE_TIMEOUT = 3000;
 
-  const next = API_HOSTS[(API_HOSTS.indexOf(activeHost) + 1) % API_HOSTS.length];
-  applyHost(next);
-  await setPreferredHost(next);
+/**
+ * Is this host answering at all?
+ *
+ * Any HTTP status counts, 401 included: the question is whether packets reach
+ * a server, not whether this call is authorised. Uses a bare axios so the
+ * interceptors below cannot recurse into a probe of a probe.
+ */
+async function probe(host: string): Promise<void> {
+  await axios.get(`${host}${KONFIG_ENDPOINT}`, {
+    timeout: PROBE_TIMEOUT,
+    validateStatus: () => true,
+  });
+}
 
-  return next;
+/** The first host to answer, or null when none of them do. */
+function firstReachable(hosts: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    let outstanding = hosts.length;
+    let done = false;
+
+    for (const host of hosts) {
+      probe(host).then(
+        () => {
+          if (!done) {
+            done = true;
+            resolve(host);
+          }
+        },
+        () => {
+          outstanding -= 1;
+          if (outstanding === 0 && !done) resolve(null);
+        },
+      );
+    }
+  });
+}
+
+/** In flight while a resolution is running, so callers share one result. */
+let hostResolution: Promise<string | null> | null = null;
+
+/**
+ * Works out which host the phone can actually reach, once.
+ *
+ * Rotating blindly on each failure was the bug: a screen fires five requests
+ * at once, all five time out together, and each one rotated the shared host —
+ * A to B to A to B — so replays landed on whichever won the race, half of them
+ * on the subnet the phone genuinely cannot see, each costing another full
+ * timeout. Probing decides instead of guessing, every concurrent caller waits
+ * on the same probe, and only a host that actually answered is remembered.
+ */
+function resolveHost(): Promise<string | null> {
+  hostResolution ??= firstReachable(API_HOSTS)
+    .then(async (host) => {
+      if (host && host !== activeHost) {
+        applyHost(host);
+        await setPreferredHost(host);
+        console.warn(`[api] host resolved to ${host}`);
+      }
+
+      return host;
+    })
+    .finally(() => {
+      hostResolution = null;
+    });
+
+  return hostResolution;
 }
 
 /* ------------------------------------------------------------------ *
@@ -207,19 +277,24 @@ api.interceptors.response.use(
           ` — code=${error.code ?? "none"} message=${error.message}`,
       );
 
-      // The host is unreachable — fall through to the next candidate and
-      // replay, until every host has been tried once for this request.
-      if (config) {
-        const tried = (config._hostsTried ?? 0) + 1;
+      // Find out which host is reachable before assuming this one is not.
+      // A slow server and a wrong subnet both surface here as "no response",
+      // and treating them alike is what made the app ping-pong between the
+      // two addresses: the office server was answering, just not within the
+      // timeout, and every timed-out request dragged the whole app onto the
+      // hotspot address and back.
+      if (config && !config._hostResolved && API_HOSTS.length > 1) {
+        config._hostResolved = true;
 
-        if (tried < API_HOSTS.length) {
-          config._hostsTried = tried;
+        const usedHost = config.baseURL;
+        const reachable = await resolveHost();
 
-          const next = await switchToNextHost();
-          if (next) {
-            console.warn(`[api] switching to fallback host ${next}`);
-            return api(config);
-          }
+        // Replay only when the phone is now pointed somewhere else. If the
+        // probe came back with the same host, that host is alive and the
+        // request simply took too long — retrying would spend another full
+        // timeout to fail in exactly the same way.
+        if (reachable && reachable !== usedHost) {
+          return api(config);
         }
       }
     }
