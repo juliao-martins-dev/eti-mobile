@@ -35,8 +35,8 @@ import { konfigNow, timeToMinutes } from "./konfig";
 import { fetchOhin, type MarkaTipu, type Ohin } from "./prezensa";
 
 /** true = one punch opens the next. Swap the lines to restore the clock rule. */
-export const MARKA_TUIR_MALU = true;
-// export const MARKA_TUIR_MALU = false;
+// export const MARKA_TUIR_MALU = true;
+export const MARKA_TUIR_MALU = false;
 
 /**
  * What happens to a morning that was never punched at all.
@@ -54,8 +54,8 @@ export const MARKA_TUIR_MALU = true;
  *
  * Only consulted when MARKA_TUIR_MALU is true.
  */
-export const KOMPLETA_LORON_TOMAK = true;
-// export const KOMPLETA_LORON_TOMAK = false;
+// export const KOMPLETA_LORON_TOMAK = true;
+export const KOMPLETA_LORON_TOMAK = false;
 
 /** The two halves of the day, spelled as the server's `Sesaun` choices. */
 export type Sesaun = "DADER" | "LOROKRAIK";
@@ -121,7 +121,10 @@ export type MarkaFlow = {
  * complete, or today's row has not arrived yet, both fall back to what the
  * server said.
  */
-export function markaFlow(ohin: Ohin | null, date: Date = new Date()): MarkaFlow {
+export function markaFlow(
+  ohin: Ohin | null,
+  date: Date = new Date(),
+): MarkaFlow {
   const servidor = {
     beleCheckin: ohin ? ohin.bele_checkin : true,
     beleCheckout: ohin ? ohin.bele_checkout : true,
