@@ -20,6 +20,7 @@ import { fetchRecentDays, formatOras, type LoronRecord } from "@/lib/istoria";
 import { fetchKonfig } from "@/lib/konfig";
 import { fetchOhin, type MarkaTipu, type Ohin } from "@/lib/prezensa";
 import type { AuthUser } from "@/lib/storage";
+import { markaFlow } from "@/lib/marka-flow";
 
 const placehoderImage = require("@/assets/images/prof.jpg");
 
@@ -138,10 +139,9 @@ export default function Index() {
   const tama = formatOras(today?.oras_tama);
   const fila = formatOras(today?.oras_fila);
 
-  // The server owns the button state. While today's row is still loading we
-  // leave both enabled rather than block a punch the server might accept.
-  const beleCheckin = today ? today.bele_checkin : true;
-  const beleCheckout = today ? today.bele_checkout : true;
+  // Exactly one button is live: the one that fills the next empty slot of the
+  // day. See lib/marka-flow.ts to go back to waiting for the clock.
+  const { beleCheckin, beleCheckout } = markaFlow(today);
 
   return (
     <SafeAreaView style={styles.container} edges={["top"]}>
