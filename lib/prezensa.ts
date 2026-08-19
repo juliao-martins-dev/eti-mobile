@@ -145,6 +145,12 @@ export async function marka(
   tipu: MarkaTipu,
   photoUri?: string | null,
   coords?: MarkaCoords | null,
+  /**
+   * Which half of the day to write to. Left out, the server picks the column
+   * from its own clock; lib/marka-flow.ts passes it so the afternoon opens as
+   * soon as the morning is finished.
+   */
+  sesaun?: string | null,
 ): Promise<MarkaResult> {
   const formData = new FormData();
 
@@ -163,6 +169,10 @@ export async function marka(
     if (typeof coords.presizaun === "number") {
       formData.append("presizaun", String(coords.presizaun));
     }
+  }
+
+  if (sesaun) {
+    formData.append("sesaun", sesaun);
   }
 
   const url = PREZENSA_ENDPOINTS[tipu];
