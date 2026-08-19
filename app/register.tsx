@@ -32,6 +32,7 @@ import {
   type MarkaTipu,
 } from "@/lib/prezensa";
 import type { AuthUser } from "@/lib/storage";
+import { sesaunBaMarka } from "@/lib/marka-flow";
 
 /**
  * What the server said about the marka just sent.
@@ -114,7 +115,10 @@ export default function RegisterPrezensa() {
 
     try {
       const coords = await getCurrentCoords();
-      const result = await marka(tipu, photoUri, coords);
+      // Names the half of the day this punch belongs to, so the afternoon
+      // does not have to wait for the clock. Null leaves it to the server.
+      const sesaun = await sesaunBaMarka(tipu);
+      const result = await marka(tipu, photoUri, coords, sesaun);
 
       // `duplicate` counts as success — the marka is already stored.
       const entry = await recordMarkaSuccess(result);
